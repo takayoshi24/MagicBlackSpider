@@ -1,97 +1,111 @@
 package com.github.takayoshi24.magicblackspider;
 
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.ReentrantLock;
 
-/**
- * Produkcyjny Scheduler dla MagicBlackSpider.
- * - Bez duplikatów (thread-safe)
- * - Nie blokuje się na 74 stronach
- * - Działa z wielowątkowym MagicBlackSpider
- */
 public class Scheduler {
 
-    private final Queue<String> queue = new ConcurrentLinkedQueue<>();
-    private final Set<String> seen = ConcurrentHashMap.newKeySet(); // odwiedzone + w kolejce
-    private volatile long totalAdded = 0;
+    public static final UrlWithDepth POISON_PILL = new UrlWithDepth("POISON_PILL", -1);
 
-    /**
-     * Dodaje URL do kolejki (jeśli jeszcze nie był widziany).
-     */
-    public boolean add(String url) {
-        if (url == null || url.isBlank()) return false;
-        String normalized = normalize(url);
-        if (seen.add(normalized)) {
-            queue.offer(normalized);
-            totalAdded++;
-            return true;
+    private final Queue<UrlWithDepth> queue = new LinkedList<>();
+    private final Set<String> allUrls = new HashSet<>(); // zbiór wszystkich URL: dodanych i odwiedzonych
+    private final ReentrantLock lock = new ReentrantLock();
+    private int rejectedCount = 0;
+
+    public static class UrlWithDepth {
+        public final String url;
+        public final int depth;
+        public UrlWithDepth(String url, int depth) {
+            this.url = url;
+            this.depth = depth;
         }
-        return false;
     }
 
-    /**
-     * Oznacza URL jako odwiedzony (dla statystyk)
-     */
-    public void markVisited(String url) {
-        // nic nie trzeba robić – jest już w `seen`
-    }
-
-    /**
-     * Pobiera następny URL do przetworzenia
-     */
-    public String next() {
-        return queue.poll();
-    }
-
-    /**
-     * Czy kolejka jest pusta
-     */
-    public boolean isEmpty() {
-        return queue.isEmpty();
-    }
-
-    /**
-     * Liczba unikalnych URL, które crawler widział (kolejka + odwiedzone)
-     */
-    public int visitedSize() {
-        return seen.size();
-    }
-
-    /**
-     * Liczba wszystkich dodanych (łącznie z odrzuconymi)
-     */
-    public long totalAdded() {
-        return totalAdded;
-    }
-
-    /**
-     * Reset (jeśli chcesz od nowa)
-     */
-    public void reset() {
-        queue.clear();
-        seen.clear();
-        totalAdded = 0;
-    }
-
-    /**
-     * Normalizuje adres URL, żeby unikać duplikatów typu "/" vs bez "/"
-     */
-    private String normalize(String url) {
+    // dodanie URL – atomowo sprawdza i dodaje
+    public boolean add(String url, int depth) {
+        lock.lock();
         try {
-            java.net.URL u = new java.net.URL(url);
-            String path = u.getPath();
-            if (!path.endsWith("/") && !path.contains(".")) {
-                path += "/";  // dodaj / tylko jeśli to katalog, nie plik
+            if (allUrls.contains(url)) {
+                rejectedCount++;
+                return false;
             }
-            return (u.getProtocol() + "://" + u.getHost() +
-                    (u.getPort() > 0 ? ":" + u.getPort() : "") +
-                    path).toLowerCase();
-        } catch (Exception e) {
-            return url.toLowerCase();
+            allUrls.add(url);
+            queue.offer(new UrlWithDepth(url, depth));
+            return true;
+        } finally {
+            lock.unlock();
         }
     }
 
-}
+    public UrlWithDepth next() {
+        lock.lock();
+        try {
+            return queue.poll();
+        } finally {
+            lock.unlock();
+        }
+    }
 
+    public void markVisited(String url) {
+        // teraz wszystkie URL są już w allUrls, nie trzeba nic robić
+    }
+
+    public void addPoisonPill() {
+        lock.lock();
+        try {
+            queue.offer(POISON_PILL);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int queueSize() {
+        lock.lock();
+        try {
+            return queue.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int visitedSize() {
+        lock.lock();
+        try {
+            return allUrls.size() - queue.size(); // wszystkie minus te, które jeszcze w kolejce
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int getRejectedCount() {
+        lock.lock();
+        try {
+            return rejectedCount;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void reset() {
+        lock.lock();
+        try {
+            queue.clear();
+            allUrls.clear();
+            rejectedCount = 0;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean isEmpty() {
+        lock.lock();
+        try {
+            return queue.isEmpty();
+        } finally {
+            lock.unlock();
+        }
+    }
+}

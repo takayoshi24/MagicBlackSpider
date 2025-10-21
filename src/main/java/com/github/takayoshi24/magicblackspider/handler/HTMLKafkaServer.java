@@ -1,16 +1,15 @@
 package com.github.takayoshi24.magicblackspider.handler;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import spark.Spark;
 
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * HTML server do podglądu przetworzonych stron z Kafka z numeracją i kolorowaniem wg głębokości.
@@ -46,16 +45,17 @@ public class HTMLKafkaServer {
             html.append(".depth1 { color: blue; }");
             html.append(".depth2 { color: orange; }");
             html.append(".depth3 { color: red; }");
+            html.append("body { background-color: gray; }");
             html.append("</style>");
             html.append("</head><body>");
             html.append("<h1>Przetworzone strony</h1><ul>");
 
             // snapshot kolejki, aby uniknąć ConcurrentModificationException
-            BlockingQueue<String> snapshot = new LinkedBlockingQueue<>(messageQueue);
+            BlockingQueue<String> snapshot = messageQueue; // kopiujemy referencję do bieżącej kolejki
 
             int counter = 1;
             for (String msg : snapshot) {
-                // rozdziel depth i URL
+                // spodziewany format: depth|url
                 String[] parts = msg.split("\\|", 2);
                 int depth = 0;
                 String url = msg;
@@ -89,5 +89,11 @@ public class HTMLKafkaServer {
                 }
             }
         }).start();
+    }
+
+    // Opcjonalnie można dodać metodę stopServer() do zamykania Spark i konsumenta
+    public void stopServer() {
+        consumer.close();
+        Spark.stop();
     }
 }

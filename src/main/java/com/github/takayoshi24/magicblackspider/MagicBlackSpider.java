@@ -2,22 +2,17 @@ package com.github.takayoshi24.magicblackspider;
 
 import com.github.takayoshi24.magicblackspider.fetcher.Fetcher;
 import com.github.takayoshi24.magicblackspider.handler.PageHandler;
-import com.github.takayoshi24.magicblackspider.Page;
 import com.github.takayoshi24.magicblackspider.utils.PolitenessManager;
 import com.github.takayoshi24.magicblackspider.utils.RobotsTxtChecker;
-import com.github.takayoshi24.magicblackspider.utils.RobotsTxtChecker.RobotsTxtRules;
-import org.apache.kafka.clients.producer.KafkaProducer;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Produkcyjny główny crawler MagicBlackSpider
- */
 public class MagicBlackSpider {
 
     private static final Logger logger = LoggerFactory.getLogger(MagicBlackSpider.class);
@@ -26,120 +21,93 @@ public class MagicBlackSpider {
     private final Fetcher fetcher;
     private final PageHandler handler;
     private final ExecutorService executor;
+    private final long politenessMillis;
+
     private final PolitenessManager politenessManager;
     private final RobotsTxtChecker robotsChecker;
-    private final int maxPages;
+    private final AtomicInteger processed = new AtomicInteger(0);
 
-    // dodajemy pole kafkaQueue i producer, które muszą być inicjalizowane w main lub handlerze
-    private final BlockingQueue<String> kafkaQueue;
-    private final KafkaProducer<String, String> producer;
-
-    public MagicBlackSpider(Scheduler scheduler, Fetcher fetcher, PageHandler handler,
-                            int threads, long politenessMillis, int maxPages,
-                            BlockingQueue<String> kafkaQueue,
-                            KafkaProducer<String, String> producer) {
+    public MagicBlackSpider(Scheduler scheduler, Fetcher fetcher, PageHandler handler, int threads, long politenessMillis) {
         this.scheduler = scheduler;
         this.fetcher = fetcher;
         this.handler = handler;
         this.executor = Executors.newFixedThreadPool(threads);
+        this.politenessMillis = politenessMillis;
         this.politenessManager = new PolitenessManager(politenessMillis);
         this.robotsChecker = new RobotsTxtChecker();
-        this.maxPages = maxPages;
-
-        this.kafkaQueue = kafkaQueue;
-        this.producer = producer;
     }
 
-    public void start(String seedUrl) {
-        logger.info("=== MagicBlackSpider startuje z: {} ===", seedUrl);
-        scheduler.add(seedUrl);
+    public void start(String seedUrl, int maxPages) throws InterruptedException {
+        // Dodaj URL startowy z depth = 0
+        scheduler.add(seedUrl, 0);
 
-        AtomicInteger processed = new AtomicInteger(0);
-        AtomicBoolean running = new AtomicBoolean(true);
+        // Główna pętla: pobieraj URL-e i submituj do executor
+        while (processed.get() < maxPages) {
+            Scheduler.UrlWithDepth urlWithDepth = scheduler.next();
 
-        while (running.get()) {
-            String url = scheduler.next();
-
-            if (url == null) {
-                if (processed.get() >= maxPages) break;
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
+            if (urlWithDepth == null) {
+                // Kolejka pusta – poczekaj chwilę i spróbuj ponownie
+                if (scheduler.isEmpty()) {
+                    Thread.sleep(100);
                 }
                 continue;
             }
 
+            // Jeśli poison pill → zakończ pętlę
+            if (urlWithDepth == Scheduler.POISON_PILL) {
+                logger.info("Otrzymano poison pill → kończymy crawl");
+                break;
+            }
+
+            // Submit tasku do executor
             executor.submit(() -> {
                 try {
-                    String baseUrl = new java.net.URL(url).getProtocol() + "://" + new java.net.URL(url).getHost();
-                    RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
-                    if (!robotsChecker.isAllowed(url, rules, baseUrl)) {
-                        logger.info("Robots.txt blokuje: {}", url);
-                        return;
-                    }
+                    String url = urlWithDepth.url;
+                    int depth = urlWithDepth.depth;
 
-                    politenessManager.ensurePolite(url, rules.crawlDelayMillis);
+                    // Sprawdzenie robots.txt
+                    if (!robotsChecker.isAllowed(url)) return;
 
+                    // Politeness
+                    politenessManager.ensurePolite(url);
+
+                    // Pobierz stronę
                     Document doc = fetcher.fetch(url);
-                    if (doc == null) {
-                        logger.warn("Nie udało się pobrać: {}", url);
-                        return;
-                    }
+                    if (doc == null) return;
 
-                    handler.handle(new Page(url, doc), scheduler);
+                    // Obsłuż stronę z depth
+                    handler.handle(new Page(url, doc), scheduler, depth);
 
+                    // Oznacz jako odwiedzoną
                     scheduler.markVisited(url);
 
-                    int count = processed.incrementAndGet();
-                    if (count % 10 == 0) {
-                        logger.info("Postęp: {} stron przetworzonych | w kolejce: {} | odwiedzone: {}",
-                                count, scheduler.totalAdded() - scheduler.visitedSize(), scheduler.visitedSize());
-                    }
-
-                    if (count >= maxPages) {
-                        running.set(false);
-                    }
+                    // Zwiększ licznik przetworzonych
+                    processed.incrementAndGet();
 
                 } catch (Exception e) {
-                    logger.error("Błąd podczas przetwarzania {}: {}", url, e.getMessage());
+                    logger.warn("Błąd przy przetwarzaniu URL {}: {}", urlWithDepth.url, e.getMessage());
                 }
             });
         }
 
-        // teraz bezpieczne zamknięcie executor i KafkaProducer
-        shutdownExecutorAndKafka();
-        logger.info("=== Crawl zakończony. Przetworzono: {} stron ===", processed.get());
+        // Wszystkie URL-e submitowane → dodaj poison pill
+        scheduler.addPoisonPill();
+        logger.info("Dodano PoisonPill do kolejki");
+
+        // Zatrzymaj executor i poczekaj aż wszystkie wątki zakończą się
+        executor.shutdown();
+        logger.info("Executor zatrzymany, oczekiwanie na zakończenie wątków...");
+
+        if (!executor.awaitTermination(10, TimeUnit.MINUTES)) {
+            executor.shutdownNow();
+            logger.warn("Executor nie zakończył pracy w czasie, wymuszone shutdownNow()");
+        }
+
+        logger.info("=== Koniec crawl’a ===");
     }
 
-    private void shutdownExecutorAndKafka() {
-        // nie przyjmujemy nowych zadań
-        executor.shutdown();
-        try {
-            // czekamy aż wszystkie wątki crawl zakończą pracę
-            if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
 
-        // oznaczamy, że crawl zakończony - wątki wysyłające do Kafki mogą zakończyć
-        // dopiero teraz opróżniamy kolejkę i zamykamy producenta
-        while (!kafkaQueue.isEmpty()) {
-            String msg = kafkaQueue.poll();
-            if (msg != null) {
-                try {
-                    producer.send(new org.apache.kafka.clients.producer.ProducerRecord<>("topic", msg));
-                } catch (Exception ex) {
-                    logger.error("Błąd wysyłki do Kafka podczas zamykania: {}", ex.getMessage());
-                }
-            }
-        }
-
-        producer.close();
-        logger.info("KafkaProducer zamknięty, wszystkie wiadomości wysłane.");
+    public int getProcessedCount() {
+        return processed.get();
     }
 }

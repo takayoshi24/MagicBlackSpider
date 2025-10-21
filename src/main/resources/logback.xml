@@ -5,6 +5,7 @@
         </encoder>
     </appender>
 
+    <logger name="com.github.takayoshi24.magicblackspider.handler.KafkaPageHandler" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="STDOUT" />

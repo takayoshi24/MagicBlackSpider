@@ -8,18 +8,17 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Produkcyjny RobotsTxtChecker
+ * Produkcyjny RobotsTxtChecker dla MagicBlackSpider:
  * - Cache'owanie robots.txt na host
  * - Obsługa User-agent
- * - Wsparcie dla Delay (Crawl-delay)
- * - Obsługa wielu hostów równocześnie
+ * - Crawl-delay
+ * - Thread-safe, obsługa wielu hostów
  */
 public class RobotsTxtChecker {
 
@@ -67,7 +66,8 @@ public class RobotsTxtChecker {
 
                     if (line.toLowerCase().startsWith("user-agent:")) {
                         currentUserAgent = line.split(":", 2)[1].trim();
-                    } else if (currentUserAgent != null && (currentUserAgent.equals("*") || currentUserAgent.equalsIgnoreCase(userAgent))) {
+                    } else if (currentUserAgent != null &&
+                            (currentUserAgent.equals("*") || currentUserAgent.equalsIgnoreCase(userAgent))) {
                         if (line.toLowerCase().startsWith("disallow:")) {
                             String path = line.split(":", 2)[1].trim();
                             rules.disallows.add(path);
@@ -76,7 +76,7 @@ public class RobotsTxtChecker {
                             rules.allows.add(path);
                         } else if (line.toLowerCase().startsWith("crawl-delay:")) {
                             try {
-                                rules.crawlDelayMillis = (long) (Double.parseDouble(line.split(":", 2)[1].trim()) * 1000);
+                                rules.crawlDelayMillis = (long)(Double.parseDouble(line.split(":", 2)[1].trim()) * 1000);
                             } catch (NumberFormatException e) {
                                 logger.warn("Niepoprawny crawl-delay w robots.txt {}: {}", baseUrl, line);
                             }
@@ -92,7 +92,22 @@ public class RobotsTxtChecker {
     }
 
     /**
-     * Sprawdza, czy URL jest dozwolony
+     * Sprawdza, czy URL jest dozwolony (wygodne przeciążenie dla crawlera)
+     */
+    public boolean isAllowed(String url) {
+        try {
+            URL u = new URL(url);
+            String baseUrl = u.getProtocol() + "://" + u.getHost();
+            RobotsTxtRules rules = fetchRules(baseUrl);
+            return isAllowed(url, rules, baseUrl);
+        } catch (Exception e) {
+            logger.warn("Niepoprawny URL {}: {}", url, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Sprawdza URL względem reguł dla hosta
      */
     public boolean isAllowed(String url, RobotsTxtRules rules, String baseUrl) {
         try {
