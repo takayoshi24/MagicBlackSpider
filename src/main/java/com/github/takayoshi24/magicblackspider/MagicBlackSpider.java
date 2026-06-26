@@ -77,7 +77,7 @@ public class MagicBlackSpider {
                 RobotsTxtChecker.RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
 
                 if (!robotsChecker.isAllowed(url, rules, baseUrl)) {
-                    // Disallowed URLs consume a permit to bound maxPages, but are not submitted.
+                    pagePermits.release();
                     continue;
                 }
 
