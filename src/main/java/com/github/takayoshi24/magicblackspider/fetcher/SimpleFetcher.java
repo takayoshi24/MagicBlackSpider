@@ -1,5 +1,6 @@
 package com.github.takayoshi24.magicblackspider.fetcher;
 
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
@@ -40,12 +41,16 @@ public class SimpleFetcher implements Fetcher {
         while (attempt < maxRetries) {
             try {
                 logger.debug("Fetching URL (attempt {}): {}", attempt + 1, url);
-                return Jsoup.connect(url)
+                Connection.Response response = Jsoup.connect(url)
                         .userAgent(userAgent)
                         .timeout(timeoutMillis)
-                        .ignoreHttpErrors(true)
                         .followRedirects(true)
-                        .get();
+                        .execute();
+                if (response.statusCode() >= 400) {
+                    logger.warn("HTTP {} for URL: {}", response.statusCode(), url);
+                    return null;
+                }
+                return response.parse();
             } catch (IOException e) {
                 attempt++;
                 logger.warn("Błąd pobierania URL {} ({}), próba {}/{}", url, e.getMessage(), attempt, maxRetries);
