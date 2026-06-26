@@ -9,8 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MagicBlackSpiderRobotsPermitTest {
 
@@ -74,5 +76,44 @@ class MagicBlackSpiderRobotsPermitTest {
         assertEquals(maxPages, processedCount.get(),
                 "Expected " + maxPages + " pages processed but got " + processedCount.get()
                         + " — blocked URLs likely leaked a permit each");
+    }
+
+    /**
+     * Verifies that the base URL passed to fetchRules() includes the port for
+     * non-standard-port seed URLs (fix for issue #38).
+     *
+     * Before the fix, getHost() was used and "http://example.com:8080/seed"
+     * produced baseUrl "http://example.com" — robots.txt fetched from the wrong port.
+     * After the fix, getAuthority() is used and the baseUrl is "http://example.com:8080".
+     */
+    @Test
+    @Timeout(10)
+    void nonStandardPort_baseUrlIncludesPort() throws InterruptedException {
+        AtomicReference<String> capturedBaseUrl = new AtomicReference<>();
+
+        Scheduler scheduler = new Scheduler();
+        Fetcher stubFetcher = url -> Jsoup.parse("<html><body></body></html>", url);
+        PageHandler noOpHandler = new PageHandler() {
+            @Override public void handle(Page page, Scheduler sched, int depth) {}
+            @Override public void close() {}
+        };
+
+        PolitenessManager zeroPoliteness = new PolitenessManager(0);
+        RobotsTxtChecker capturingRobots = new RobotsTxtChecker() {
+            @Override
+            public RobotsTxtRules fetchRules(String baseUrl) {
+                capturedBaseUrl.set(baseUrl);
+                return new RobotsTxtRules();
+            }
+        };
+
+        MagicBlackSpider spider = new MagicBlackSpider(
+                scheduler, stubFetcher, noOpHandler, 1, 0L,
+                zeroPoliteness, capturingRobots);
+
+        spider.start("http://example.com:8080/seed", 1);
+
+        assertTrue(capturedBaseUrl.get() != null && capturedBaseUrl.get().contains(":8080"),
+                "fetchRules() must receive a baseUrl with the port, got: " + capturedBaseUrl.get());
     }
 }

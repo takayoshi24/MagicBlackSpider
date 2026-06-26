@@ -81,7 +81,8 @@ public class MagicBlackSpider {
 
             // Robots.txt + politeness checks at dispatch time so worker threads never sleep.
             try {
-                String baseUrl = new java.net.URL(url).getProtocol() + "://" + new java.net.URL(url).getHost();
+                java.net.URL parsed = new java.net.URL(url);
+                String baseUrl = parsed.getProtocol() + "://" + parsed.getAuthority();
                 RobotsTxtChecker.RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
 
                 if (!robotsChecker.isAllowed(url, rules, baseUrl)) {
