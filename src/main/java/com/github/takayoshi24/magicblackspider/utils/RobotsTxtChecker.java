@@ -7,6 +7,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Map;
@@ -24,6 +25,8 @@ public class RobotsTxtChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(RobotsTxtChecker.class);
 
+    static final Duration CACHE_TTL = Duration.ofMinutes(30);
+
     private final Map<String, RobotsTxtRules> cache = new ConcurrentHashMap<>();
     private final String userAgent;
 
@@ -39,7 +42,13 @@ public class RobotsTxtChecker {
      * Pobiera i parsuje robots.txt dla hosta
      */
     public RobotsTxtRules fetchRules(String baseUrl) {
-        return cache.computeIfAbsent(baseUrl, this::downloadAndParse);
+        RobotsTxtRules cached = cache.get(baseUrl);
+        if (cached != null && Duration.between(cached.lastFetched, Instant.now()).compareTo(CACHE_TTL) < 0) {
+            return cached;
+        }
+        RobotsTxtRules fresh = downloadAndParse(baseUrl);
+        cache.put(baseUrl, fresh);
+        return fresh;
     }
 
     private RobotsTxtRules downloadAndParse(String baseUrl) {
