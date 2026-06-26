@@ -36,16 +36,22 @@ public class PolitenessManager {
             long delay = crawlDelayMillis > 0 ? crawlDelayMillis : defaultDelayMillis;
 
             while (true) {
-                Instant last = lastAccessMap.get(host);
-                Instant now = Instant.now();
-                if (last == null || now.toEpochMilli() - last.toEpochMilli() >= delay) {
-                    lastAccessMap.put(host, now);
+                boolean[] shouldProceed = {false};
+                long[] sleepTime = {0};
+                lastAccessMap.compute(host, (h, last) -> {
+                    Instant now = Instant.now();
+                    if (last == null || now.toEpochMilli() - last.toEpochMilli() >= delay) {
+                        shouldProceed[0] = true;
+                        return now;
+                    }
+                    sleepTime[0] = delay - (now.toEpochMilli() - last.toEpochMilli());
+                    return last;
+                });
+                if (shouldProceed[0]) {
                     break;
-                } else {
-                    long sleepTime = delay - (now.toEpochMilli() - last.toEpochMilli());
-                    logger.debug("PolitenessManager: czekam {} ms dla hosta {}", sleepTime, host);
-                    TimeUnit.MILLISECONDS.sleep(sleepTime);
                 }
+                logger.debug("PolitenessManager: czekam {} ms dla hosta {}", sleepTime[0], host);
+                TimeUnit.MILLISECONDS.sleep(sleepTime[0]);
             }
         } catch (Exception e) {
             logger.warn("PolitenessManager: błąd przy url {}: {}", url, e.getMessage());
