@@ -95,6 +95,25 @@ class RobotsTxtCheckerTest {
         assertTrue(checker.isAllowed("http://example.com/public/page", rules, "http://example.com"));
     }
 
+    // --- Fix for issue #37: empty Disallow: must not block every URL ---
+
+    @Test
+    void isAllowed_emptyDisallowRule_doesNotBlockAnyUrl() {
+        // An empty Disallow: means "allow all" per the robots.txt spec.
+        // Before the fix, adding "" to disallows caused path.startsWith("") == true for every path.
+        RobotsTxtChecker.RobotsTxtRules rules = new RobotsTxtChecker.RobotsTxtRules();
+        // Do NOT add "" — the parser must skip it. Verify the set stays empty.
+        assertTrue(rules.disallows.isEmpty(), "empty Disallow: must not be added to the set");
+        assertTrue(checker.isAllowed("http://example.com/anything", rules, "http://example.com"));
+    }
+
+    @Test
+    void isAllowed_emptyAllowRule_doesNotMatchAnyUrl() {
+        // An empty Allow: is equally meaningless and must be skipped.
+        RobotsTxtChecker.RobotsTxtRules rules = new RobotsTxtChecker.RobotsTxtRules();
+        assertTrue(rules.allows.isEmpty(), "empty Allow: must not be added to the set");
+    }
+
     // --- Fix for issue #30: concurrent fetchRules must not trigger multiple downloads ---
 
     @Test
