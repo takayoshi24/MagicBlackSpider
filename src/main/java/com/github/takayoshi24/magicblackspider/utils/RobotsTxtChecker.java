@@ -43,13 +43,12 @@ public class RobotsTxtChecker {
      * Pobiera i parsuje robots.txt dla hosta
      */
     public RobotsTxtRules fetchRules(String baseUrl) {
-        RobotsTxtRules cached = cache.get(baseUrl);
-        if (cached != null && Duration.between(cached.lastFetched, Instant.now()).compareTo(CACHE_TTL) < 0) {
-            return cached;
-        }
-        RobotsTxtRules fresh = downloadAndParse(baseUrl);
-        cache.put(baseUrl, fresh);
-        return fresh;
+        return cache.compute(baseUrl, (key, existing) -> {
+            if (existing != null && Duration.between(existing.lastFetched, Instant.now()).compareTo(CACHE_TTL) < 0) {
+                return existing;
+            }
+            return downloadAndParse(key);
+        });
     }
 
     private RobotsTxtRules downloadAndParse(String baseUrl) {
