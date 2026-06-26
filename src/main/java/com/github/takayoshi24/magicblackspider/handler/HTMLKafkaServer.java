@@ -7,7 +7,9 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import spark.Spark;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
 
@@ -51,8 +53,7 @@ public class HTMLKafkaServer {
             html.append("</head><body>");
             html.append("<h1>Przetworzone strony</h1><ul>");
 
-            // snapshot kolejki, aby uniknąć ConcurrentModificationException
-            BlockingQueue<String> snapshot = messageQueue; // kopiujemy referencję do bieżącej kolejki
+            List<String> snapshot = new ArrayList<>(messageQueue);
 
             int counter = 1;
             for (String msg : snapshot) {
