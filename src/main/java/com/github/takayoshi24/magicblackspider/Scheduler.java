@@ -1,16 +1,16 @@
 package com.github.takayoshi24.magicblackspider;
 
 import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Scheduler {
 
     public static final UrlWithDepth POISON_PILL = new UrlWithDepth("POISON_PILL", -1);
 
-    private final Queue<UrlWithDepth> queue = new LinkedList<>();
+    private final LinkedBlockingQueue<UrlWithDepth> queue = new LinkedBlockingQueue<>();
     private final Set<String> allUrls = new HashSet<>(); // zbiór wszystkich URL: dodanych i odwiedzonych
     private final ReentrantLock lock = new ReentrantLock();
     private int rejectedCount = 0;
@@ -40,13 +40,8 @@ public class Scheduler {
         }
     }
 
-    public UrlWithDepth next() {
-        lock.lock();
-        try {
-            return queue.poll();
-        } finally {
-            lock.unlock();
-        }
+    public UrlWithDepth next(long timeout, TimeUnit unit) throws InterruptedException {
+        return queue.poll(timeout, unit);
     }
 
     public void markVisited(String url) {
@@ -54,27 +49,17 @@ public class Scheduler {
     }
 
     public void addPoisonPill() {
-        lock.lock();
-        try {
-            queue.offer(POISON_PILL);
-        } finally {
-            lock.unlock();
-        }
+        queue.offer(POISON_PILL);
     }
 
     public int queueSize() {
-        lock.lock();
-        try {
-            return queue.size();
-        } finally {
-            lock.unlock();
-        }
+        return queue.size();
     }
 
     public int visitedSize() {
         lock.lock();
         try {
-            return allUrls.size() - queue.size(); // wszystkie minus te, które jeszcze w kolejce
+            return allUrls.size() - queue.size();
         } finally {
             lock.unlock();
         }
@@ -100,12 +85,4 @@ public class Scheduler {
         }
     }
 
-    public boolean isEmpty() {
-        lock.lock();
-        try {
-            return queue.isEmpty();
-        } finally {
-            lock.unlock();
-        }
-    }
 }
