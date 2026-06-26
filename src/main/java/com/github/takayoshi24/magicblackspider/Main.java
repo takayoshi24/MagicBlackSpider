@@ -3,6 +3,7 @@ package com.github.takayoshi24.magicblackspider;
 import com.github.takayoshi24.magicblackspider.fetcher.SimpleFetcher;
 import com.github.takayoshi24.magicblackspider.handler.HTMLKafkaServer;
 import com.github.takayoshi24.magicblackspider.handler.KafkaPageHandler;
+import com.github.takayoshi24.magicblackspider.handler.KafkaProducerWorker;
 import com.github.takayoshi24.magicblackspider.handler.PageHandler;
 
 import java.util.concurrent.BlockingQueue;
@@ -24,14 +25,21 @@ public class Main {
         // Fetcher z timeoutem 7s
         SimpleFetcher fetcher = new SimpleFetcher(7000);
 
-        // Kolejka dla Kafka + HTML servera
-        BlockingQueue<String> kafkaQueue = new LinkedBlockingQueue<>();
+        // Queue from crawler to Kafka producer
+        BlockingQueue<String> producerQueue = new LinkedBlockingQueue<>();
 
-        // PageHandler
-        PageHandler handler = new KafkaPageHandler(kafkaQueue);
+        // Queue from Kafka consumer to HTML dashboard
+        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>();
 
-        // HTML server uruchomiony równolegle
-        HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, kafkaQueue);
+        // PageHandler writes crawled URLs into the producer queue
+        PageHandler handler = new KafkaPageHandler(producerQueue);
+
+        // Producer worker reads from producerQueue and publishes to Kafka
+        KafkaProducerWorker producerWorker = new KafkaProducerWorker(kafkaServers, kafkaTopic, producerQueue);
+        producerWorker.start();
+
+        // HTML server reads from Kafka consumer into displayQueue
+        HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue);
         htmlServer.startServer(htmlPort);
 
         // Crawler
@@ -47,6 +55,7 @@ public class Main {
         System.out.println("Nieprzetworzone URL: " + scheduler.queueSize());
         System.out.println("Błędne / odrzucone: " + scheduler.getRejectedCount());
 
+        producerWorker.stop();
         htmlServer.stopServer();
     }
 }
