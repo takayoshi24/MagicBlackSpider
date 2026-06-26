@@ -8,26 +8,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class HTMLKafkaServerQueueCapTest {
 
-    @Test
-    void displayQueue_doesNotGrowBeyondMaxDisplayEntries() {
-        LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(HTMLKafkaServer.MAX_DISPLAY_ENTRIES);
+    private static final int CAP = 200; // simulates maxPages passed as queue capacity
 
-        int overLimit = HTMLKafkaServer.MAX_DISPLAY_ENTRIES + 500;
+    @Test
+    void displayQueue_doesNotGrowBeyondCap() {
+        LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(CAP);
+
+        int overLimit = CAP + 50;
         for (int i = 0; i < overLimit; i++) {
             while (!queue.offer("0|http://example.com/" + i)) {
                 queue.poll();
             }
         }
 
-        assertEquals(HTMLKafkaServer.MAX_DISPLAY_ENTRIES, queue.size(),
-                "Queue must never exceed MAX_DISPLAY_ENTRIES");
+        assertEquals(CAP, queue.size(), "Queue must never exceed its capacity");
     }
 
     @Test
     void displayQueue_retainsLatestEntries_afterEviction() {
-        LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(HTMLKafkaServer.MAX_DISPLAY_ENTRIES);
+        LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(CAP);
 
-        int total = HTMLKafkaServer.MAX_DISPLAY_ENTRIES + 10;
+        int total = CAP + 10;
         for (int i = 0; i < total; i++) {
             while (!queue.offer("msg-" + i)) {
                 queue.poll();

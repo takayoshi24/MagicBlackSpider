@@ -29,8 +29,8 @@ public class Main {
         // Queue from crawler to Kafka producer
         BlockingQueue<String> producerQueue = new LinkedBlockingQueue<>();
 
-        // Queue from Kafka consumer to HTML dashboard — bounded to prevent unbounded memory growth
-        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>(HTMLKafkaServer.MAX_DISPLAY_ENTRIES);
+        // Queue from Kafka consumer to HTML dashboard — bounded by maxPages so all crawled pages are shown
+        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>(maxPages);
 
         // PageHandler writes crawled URLs into the producer queue
         PageHandler handler = new KafkaPageHandler(producerQueue, maxDepth);
@@ -40,7 +40,7 @@ public class Main {
         producerWorker.start();
 
         // HTML server reads from Kafka consumer into displayQueue
-        HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue);
+        HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue, scheduler);
         htmlServer.startServer(htmlPort);
 
         // Crawler
