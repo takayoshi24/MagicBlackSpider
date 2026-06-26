@@ -15,9 +15,15 @@ public class KafkaPageHandler implements PageHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaPageHandler.class);
     private final BlockingQueue<String> kafkaQueue;
+    private final int maxDepth;
 
     public KafkaPageHandler(BlockingQueue<String> kafkaQueue) {
+        this(kafkaQueue, Integer.MAX_VALUE);
+    }
+
+    public KafkaPageHandler(BlockingQueue<String> kafkaQueue, int maxDepth) {
         this.kafkaQueue = kafkaQueue;
+        this.maxDepth = maxDepth;
     }
 
     public void handle(Page page, Scheduler scheduler, int depth) {
@@ -46,7 +52,7 @@ public class KafkaPageHandler implements PageHandler {
                 String protocol = newUrl.getProtocol();
                 if (!protocol.equals("http") && !protocol.equals("https")) continue;
                 if (!newUrl.getHost().equalsIgnoreCase(baseDomain)) continue;
-                if (scheduler.add(href, depth + 1)) {
+                if (depth + 1 <= maxDepth && scheduler.add(href, depth + 1)) {
                     newLinks++;
                 }
             } catch (Exception ignored) {}
