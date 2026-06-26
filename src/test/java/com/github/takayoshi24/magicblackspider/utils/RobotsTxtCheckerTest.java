@@ -2,6 +2,14 @@ package com.github.takayoshi24.magicblackspider.utils;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class RobotsTxtCheckerTest {
@@ -85,5 +93,67 @@ class RobotsTxtCheckerTest {
         rules.disallows.add("/admin");
 
         assertTrue(checker.isAllowed("http://example.com/public/page", rules, "http://example.com"));
+    }
+
+    // --- Fix for issue #30: concurrent fetchRules must not trigger multiple downloads ---
+
+    @Test
+    void fetchRules_concurrentAccess_neverReturnsNull() throws Exception {
+        // Use a URL that will fail to connect — downloadAndParse handles it gracefully and
+        // returns an empty RobotsTxtRules, so every concurrent call must still return non-null.
+        int threads = 20;
+        String baseUrl = "http://localhost:19999"; // nothing listening here
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<RobotsTxtChecker.RobotsTxtRules>> futures = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            futures.add(pool.submit(() -> {
+                ready.countDown();
+                start.await();
+                return checker.fetchRules(baseUrl);
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+        pool.shutdown();
+
+        for (Future<RobotsTxtChecker.RobotsTxtRules> f : futures) {
+            assertNotNull(f.get(), "fetchRules must never return null");
+        }
+    }
+
+    @Test
+    void fetchRules_concurrentAccess_allThreadsReceiveSameInstance() throws Exception {
+        // Under the compute() fix, all threads racing on the same key must get the same
+        // cached RobotsTxtRules object (identical reference) once the first compute completes.
+        int threads = 20;
+        String baseUrl = "http://localhost:19999";
+        RobotsTxtChecker.RobotsTxtRules seed = checker.fetchRules(baseUrl); // prime the cache
+
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger mismatches = new AtomicInteger(0);
+
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            futures.add(pool.submit(() -> {
+                ready.countDown();
+                start.await();
+                RobotsTxtChecker.RobotsTxtRules result = checker.fetchRules(baseUrl);
+                if (result != seed) mismatches.incrementAndGet();
+                return null;
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+        pool.shutdown();
+
+        for (Future<?> f : futures) f.get();
+        assertEquals(0, mismatches.get(), "All threads should get the same cached instance within TTL");
     }
 }
