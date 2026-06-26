@@ -79,10 +79,14 @@ public class RobotsTxtChecker {
                             (currentUserAgent.equals("*") || currentUserAgent.equalsIgnoreCase(userAgent))) {
                         if (line.toLowerCase().startsWith("disallow:")) {
                             String path = line.split(":", 2)[1].trim();
-                            rules.disallows.add(path);
+                            if (!path.isEmpty()) {
+                                rules.disallows.add(path);
+                            }
                         } else if (line.toLowerCase().startsWith("allow:")) {
                             String path = line.split(":", 2)[1].trim();
-                            rules.allows.add(path);
+                            if (!path.isEmpty()) {
+                                rules.allows.add(path);
+                            }
                         } else if (line.toLowerCase().startsWith("crawl-delay:")) {
                             try {
                                 rules.crawlDelayMillis = (long)(Double.parseDouble(line.split(":", 2)[1].trim()) * 1000);
