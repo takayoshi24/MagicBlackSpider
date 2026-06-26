@@ -65,6 +65,31 @@ public class PolitenessManager {
         ensurePolite(url, 0);
     }
 
+    /**
+     * Non-blocking check: atomically claims the host slot if the delay has elapsed.
+     * @return 0 if the slot was claimed (caller may proceed), or remaining wait millis otherwise.
+     */
+    public long tryAcquire(String url, long crawlDelayMillis) {
+        try {
+            String host = extractHost(url);
+            long delay = crawlDelayMillis > 0 ? crawlDelayMillis : defaultDelayMillis;
+            long[] waitTime = {0};
+            lastAccessMap.compute(host, (h, last) -> {
+                Instant now = Instant.now();
+                if (last == null || now.toEpochMilli() - last.toEpochMilli() >= delay) {
+                    waitTime[0] = 0;
+                    return now;
+                }
+                waitTime[0] = delay - (now.toEpochMilli() - last.toEpochMilli());
+                return last;
+            });
+            return waitTime[0];
+        } catch (Exception e) {
+            logger.warn("PolitenessManager: error for url {}: {}", url, e.getMessage());
+            return 0;
+        }
+    }
+
     private String extractHost(String url) throws Exception {
         return new java.net.URL(url).getHost();
     }

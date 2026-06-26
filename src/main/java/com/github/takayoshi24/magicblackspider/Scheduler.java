@@ -52,6 +52,11 @@ public class Scheduler {
         queue.offer(POISON_PILL);
     }
 
+    /** Re-adds a URL that was already deduped; bypasses the allUrls check. */
+    public void requeue(UrlWithDepth urlWithDepth) {
+        queue.offer(urlWithDepth);
+    }
+
     public int queueSize() {
         return queue.size();
     }

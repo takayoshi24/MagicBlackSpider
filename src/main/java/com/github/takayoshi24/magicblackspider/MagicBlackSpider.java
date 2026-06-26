@@ -68,21 +68,37 @@ public class MagicBlackSpider {
                 break;
             }
 
+            final String url = urlWithDepth.url;
+            final int depth = urlWithDepth.depth;
+
+            // Robots.txt + politeness checks at dispatch time so worker threads never sleep.
+            try {
+                String baseUrl = new java.net.URL(url).getProtocol() + "://" + new java.net.URL(url).getHost();
+                RobotsTxtChecker.RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
+
+                if (!robotsChecker.isAllowed(url, rules, baseUrl)) {
+                    // Disallowed URLs consume a permit to bound maxPages, but are not submitted.
+                    continue;
+                }
+
+                // If the host isn't ready yet, release the permit, re-queue the URL, and wait
+                // briefly before the next dispatch iteration.
+                long waitMs = politenessManager.tryAcquire(url, rules.crawlDelayMillis);
+                if (waitMs > 0) {
+                    pagePermits.release();
+                    scheduler.requeue(urlWithDepth);
+                    TimeUnit.MILLISECONDS.sleep(Math.min(waitMs, 100));
+                    continue;
+                }
+            } catch (Exception e) {
+                logger.warn("Błąd przy dispatch URL {}: {}", url, e.getMessage());
+                continue;
+            }
+
             // Submit tasku do executor; permit is intentionally NOT released —
             // each acquired permit represents one page slot consumed.
             executor.submit(() -> {
                 try {
-                    String url = urlWithDepth.url;
-                    int depth = urlWithDepth.depth;
-
-                    // Sprawdzenie robots.txt
-                    String baseUrl = new java.net.URL(url).getProtocol() + "://" + new java.net.URL(url).getHost();
-                    RobotsTxtChecker.RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
-                    if (!robotsChecker.isAllowed(url, rules, baseUrl)) return;
-
-                    // Politeness — honour Crawl-delay from robots.txt when present
-                    politenessManager.ensurePolite(url, rules.crawlDelayMillis);
-
                     // Pobierz stronę
                     Document doc = fetcher.fetch(url);
                     if (doc == null) return;
@@ -97,7 +113,7 @@ public class MagicBlackSpider {
                     processed.incrementAndGet();
 
                 } catch (Exception e) {
-                    logger.warn("Błąd przy przetwarzaniu URL {}: {}", urlWithDepth.url, e.getMessage());
+                    logger.warn("Błąd przy przetwarzaniu URL {}: {}", url, e.getMessage());
                 }
             });
         }
