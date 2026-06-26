@@ -41,91 +41,110 @@ public class HTMLKafkaServer {
     public void startServer(int port) {
         Spark.port(port);
 
-        // endpoint do wyświetlania stron w HTML z odświeżaniem co 5 sekund
         Spark.get("/", (req, res) -> {
-            StringBuilder html = new StringBuilder("<html><head><title>MagicBlackSpider</title>");
-            html.append("<meta http-equiv='refresh' content='5'>"); // odśwież co 5 sekund
-            html.append("<style>");
-            html.append(".depth0 { color: green; }");
-            html.append(".depth1 { color: blue; }");
-            html.append(".depth2 { color: orange; }");
-            html.append(".depth3 { color: red; }");
-            html.append("body { background-color: gray; margin: 0; padding: 16px; }");
-            html.append("#stats {");
-            html.append("  position: fixed; top: 16px; right: 16px;");
-            html.append("  background: #1a1a2e; color: #eee;");
-            html.append("  border: 1px solid #444; border-radius: 8px;");
-            html.append("  padding: 14px 18px; min-width: 200px;");
-            html.append("  font-family: monospace; font-size: 13px;");
-            html.append("  box-shadow: 0 4px 12px rgba(0,0,0,0.5);");
-            html.append("  z-index: 999;");
-            html.append("}");
-            html.append("#stats h3 { margin: 0 0 10px 0; font-size: 14px; color: #aaa; letter-spacing: 1px; text-transform: uppercase; }");
-            html.append("#stats .total { font-size: 22px; font-weight: bold; color: #fff; margin-bottom: 10px; }");
-            html.append("#stats .row { display: flex; justify-content: space-between; margin: 4px 0; }");
-            html.append("#stats .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }");
-            html.append("#stats .c0 { background: green; } #stats .c1 { background: #4488ff; }");
-            html.append("#stats .c2 { background: orange; } #stats .c3 { background: red; }");
-            html.append("#stats .cnt { font-weight: bold; }");
-            html.append("</style>");
-            html.append("</head><body>");
-
             List<String> snapshot = new ArrayList<>(messageQueue);
 
-            // count per depth for the stats panel
+            // parse messages and count per depth
             Map<Integer, Integer> depthCounts = new TreeMap<>();
-            int counter = 1;
+            List<int[]> depthList = new ArrayList<>(); // [depth] per entry
+            List<String> urlList = new ArrayList<>();
+
             for (String msg : snapshot) {
                 String[] parts = msg.split("\\|", 2);
                 int depth = 0;
+                String url = msg;
                 if (parts.length == 2) {
-                    try { depth = Integer.parseInt(parts[0]); } catch (NumberFormatException ignored) {}
+                    try { depth = Integer.parseInt(parts[0]); url = parts[1]; }
+                    catch (NumberFormatException ignored) {}
                 }
+                depthList.add(new int[]{depth});
+                urlList.add(url);
                 depthCounts.merge(depth, 1, Integer::sum);
             }
+
+            StringBuilder html = new StringBuilder("<!DOCTYPE html><html><head>");
+            html.append("<meta charset='UTF-8'>");
+            html.append("<title>MagicBlackSpider</title>");
+            html.append("<meta http-equiv='refresh' content='5'>");
+            html.append("<style>");
+            html.append("*{box-sizing:border-box;margin:0;padding:0}");
+            html.append("body{background:#0f0f1a;color:#ccc;font-family:'Courier New',monospace;padding:24px 280px 24px 24px;min-height:100vh}");
+            html.append("h1{color:#fff;font-size:18px;letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;padding-bottom:10px;border-bottom:1px solid #2a2a3e}");
+            html.append("#stats{position:fixed;top:24px;right:24px;background:#13131f;border:1px solid #2a2a3e;border-radius:10px;padding:16px 20px;min-width:230px;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,0.6)}");
+            html.append("#stats h3{font-size:11px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}");
+            html.append("#stats .total{font-size:26px;font-weight:bold;color:#fff;margin-bottom:14px}");
+            html.append("#stats .total span{font-size:13px;color:#555;font-weight:normal;margin-left:4px}");
+            html.append("#stats .row{display:flex;justify-content:space-between;align-items:center;margin:5px 0;font-size:12px}");
+            html.append("#stats .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex-shrink:0}");
+            html.append("#stats .cnt{font-weight:bold;color:#fff}");
+            html.append("table{width:100%;border-collapse:collapse}");
+            html.append("thead th{text-align:left;padding:8px 12px;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #2a2a3e;font-weight:normal}");
+            html.append("tbody tr{border-bottom:1px solid #16161f}");
+            html.append("tbody tr:hover{background:rgba(255,255,255,0.02)}");
+            html.append("td{padding:9px 12px;vertical-align:middle}");
+            html.append(".num{color:#444;font-size:11px;width:50px}");
+            html.append(".badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:bold;letter-spacing:0.5px}");
+            html.append(".scheme{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:6px;background:#1e1e30;color:#667;border:1px solid #2a2a3e}");
+            html.append(".host{color:#e8e8f0;font-weight:bold;font-size:13px}");
+            html.append(".path{color:#555;font-size:12px;word-break:break-all}");
+            html.append("a.url-link{text-decoration:none;display:flex;flex-direction:column;gap:2px}");
+            html.append("a.url-link:hover .host{color:#7eb8ff}");
+            html.append("a.url-link:hover .path{color:#888}");
+            html.append(".host-row{display:flex;align-items:center;flex-wrap:wrap;gap:4px}");
+            html.append("</style></head><body>");
 
             // stats panel
             html.append("<div id='stats'>");
             html.append("<h3>Crawler Stats</h3>");
-            html.append("<div class='total'>").append(snapshot.size()).append(" pages</div>");
-            String[] depthLabels = {"Depth 0", "Depth 1", "Depth 2", "Depth 3+"};
+            html.append("<div class='total'>").append(snapshot.size()).append("<span>pages crawled</span></div>");
             for (Map.Entry<Integer, Integer> e : depthCounts.entrySet()) {
                 int d = e.getKey();
-                int colorIdx = Math.min(d, 3);
-                String label = d <= 3 ? depthLabels[d] : "Depth " + d;
+                String color = depthColor(d);
                 html.append("<div class='row'>")
-                    .append("<span><span class='dot c").append(colorIdx).append("'></span>").append(label).append("</span>")
+                    .append("<span><span class='dot' style='background:").append(color).append("'></span>Depth ").append(d).append("</span>")
                     .append("<span class='cnt'>").append(e.getValue()).append("</span>")
                     .append("</div>");
             }
             html.append("</div>");
 
-            html.append("<h1>Przetworzone strony</h1><ul>");
+            html.append("<h1>&#x1F577; MagicBlackSpider &mdash; Crawled Pages</h1>");
+            html.append("<table>");
+            html.append("<thead><tr><th>#</th><th>Depth</th><th>Address</th></tr></thead>");
+            html.append("<tbody>");
 
-            counter = 1;
-            for (String msg : snapshot) {
-                // spodziewany format: depth|url
-                String[] parts = msg.split("\\|", 2);
-                int depth = 0;
-                String url = msg;
-                if (parts.length == 2) {
-                    try {
-                        depth = Integer.parseInt(parts[0]);
-                        url = parts[1];
-                    } catch (NumberFormatException e) {
-                        // zostaw domyślną głębokość 0
-                    }
-                }
+            for (int i = 0; i < urlList.size(); i++) {
+                String url = urlList.get(i);
+                int depth = depthList.get(i)[0];
+                String color = depthColor(depth);
 
-                String cssClass = "depth" + (depth > 3 ? 3 : depth);
-                html.append("<li class='").append(cssClass).append("'>")
-                        .append(String.format("%03d: ", counter))
-                        .append(url)
-                        .append("</li>");
-                counter++;
+                String scheme = "";
+                String host = url;
+                String path = "";
+                try {
+                    java.net.URI uri = new java.net.URI(url);
+                    if (uri.getScheme() != null) scheme = uri.getScheme();
+                    if (uri.getHost() != null) host = uri.getHost();
+                    String rawPath = uri.getPath() != null ? uri.getPath() : "";
+                    String query = uri.getQuery() != null ? "?" + uri.getQuery() : "";
+                    path = rawPath + query;
+                    if (path.isEmpty()) path = "/";
+                } catch (Exception ignored) {}
+
+                html.append("<tr>");
+                html.append("<td class='num'>").append(String.format("%03d", i + 1)).append("</td>");
+                html.append("<td><span class='badge' style='background:").append(color).append("22;color:").append(color)
+                    .append(";border:1px solid ").append(color).append("55'>D").append(depth).append("</span></td>");
+                html.append("<td><a class='url-link' href='").append(escapeHtml(url)).append("' target='_blank'>");
+                html.append("<div class='host-row'>");
+                if (!scheme.isEmpty()) html.append("<span class='scheme'>").append(escapeHtml(scheme)).append("</span>");
+                html.append("<span class='host'>").append(escapeHtml(host)).append("</span>");
+                html.append("</div>");
+                if (!path.equals("/")) html.append("<span class='path'>").append(escapeHtml(path)).append("</span>");
+                html.append("</a></td>");
+                html.append("</tr>");
             }
 
-            html.append("</ul></body></html>");
+            html.append("</tbody></table></body></html>");
             return html.toString();
         });
 
@@ -147,5 +166,15 @@ public class HTMLKafkaServer {
         running = false;
         consumer.close();
         Spark.stop();
+    }
+
+    // HSL golden-angle distribution — each depth gets a visually distinct hue
+    private static String depthColor(int depth) {
+        double hue = (depth * 137.508) % 360;
+        return String.format("hsl(%.0f,65%%,58%%)", hue);
+    }
+
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 }
