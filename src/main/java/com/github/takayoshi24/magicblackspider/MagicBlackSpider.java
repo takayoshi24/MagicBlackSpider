@@ -52,12 +52,20 @@ public class MagicBlackSpider {
         // under concurrent processing (issue #11).
         Semaphore pagePermits = new Semaphore(maxPages);
 
+        // Tracks tasks submitted to the executor that haven't finished yet.
+        // When the queue is empty and inFlight==0 no worker can enqueue more URLs,
+        // so the crawl is complete even if maxPages wasn't reached (fix for issue #27).
+        AtomicInteger inFlight = new AtomicInteger(0);
+
         // Główna pętla: pobieraj URL-e i submituj do executor
         while (pagePermits.tryAcquire(500, TimeUnit.MILLISECONDS)) {
             Scheduler.UrlWithDepth urlWithDepth = scheduler.next(500, TimeUnit.MILLISECONDS);
 
             if (urlWithDepth == null) {
                 pagePermits.release(); // no URL available yet, give permit back
+                if (inFlight.get() == 0) {
+                    break; // queue empty and no worker can add more URLs — site exhausted
+                }
                 continue;
             }
 
@@ -97,6 +105,7 @@ public class MagicBlackSpider {
 
             // Submit tasku do executor; permit is intentionally NOT released —
             // each acquired permit represents one page slot consumed.
+            inFlight.incrementAndGet();
             executor.submit(() -> {
                 try {
                     // Pobierz stronę
@@ -114,6 +123,8 @@ public class MagicBlackSpider {
 
                 } catch (Exception e) {
                     logger.warn("Błąd przy przetwarzaniu URL {}: {}", url, e.getMessage());
+                } finally {
+                    inFlight.decrementAndGet();
                 }
             });
         }
