@@ -9,9 +9,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -106,7 +107,7 @@ public class RobotsTxtChecker {
     public boolean isAllowed(String url) {
         try {
             URL u = new URL(url);
-            String baseUrl = u.getProtocol() + "://" + u.getHost();
+            String baseUrl = u.getProtocol() + "://" + u.getAuthority();
             RobotsTxtRules rules = fetchRules(baseUrl);
             return isAllowed(url, rules, baseUrl);
         } catch (Exception e) {
@@ -121,25 +122,27 @@ public class RobotsTxtChecker {
     public boolean isAllowed(String url, RobotsTxtRules rules, String baseUrl) {
         try {
             String path = new URL(url).getPath();
-            // Allow ma wyższy priorytet niż Disallow
-            for (String allow : rules.allows) {
-                if (path.startsWith(allow)) return true;
-            }
-            for (String disallow : rules.disallows) {
-                if (path.startsWith(disallow)) return false;
-            }
+            // Most specific (longest) matching rule wins; ties go to Allow
+            String bestAllow = rules.allows.stream().filter(path::startsWith).findFirst().orElse(null);
+            String bestDisallow = rules.disallows.stream().filter(path::startsWith).findFirst().orElse(null);
+            if (bestAllow == null && bestDisallow == null) return true;
+            if (bestAllow == null) return false;
+            if (bestDisallow == null) return true;
+            return bestAllow.length() >= bestDisallow.length();
         } catch (Exception e) {
             logger.warn("Błąd parsowania URL {}: {}", url, e.getMessage());
         }
-        return true; // domyślnie pozwól jeśli brak reguł
+        return true;
     }
 
     /**
      * Klasa przechowująca reguły robots.txt dla hosta
      */
     public static class RobotsTxtRules {
-        public final Set<String> disallows = new HashSet<>();
-        public final Set<String> allows = new HashSet<>();
+        private static final Comparator<String> BY_LENGTH_DESC =
+                Comparator.comparingInt(String::length).reversed().thenComparing(Comparator.naturalOrder());
+        public final Set<String> disallows = new TreeSet<>(BY_LENGTH_DESC);
+        public final Set<String> allows = new TreeSet<>(BY_LENGTH_DESC);
         public long crawlDelayMillis = 0;
         public Instant lastFetched = Instant.now();
     }
