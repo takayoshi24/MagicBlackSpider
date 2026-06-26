@@ -17,6 +17,7 @@ public class KafkaProducerWorker {
     private final KafkaProducer<String, String> producer;
     private final BlockingQueue<String> queue;
     private final String topic;
+    private Thread workerThread;
 
     public KafkaProducerWorker(String bootstrapServers, String topic, BlockingQueue<String> queue) {
         this.topic = topic;
@@ -32,7 +33,7 @@ public class KafkaProducerWorker {
     }
 
     public void start() {
-        Thread workerThread = new Thread(() -> {
+        workerThread = new Thread(() -> {
             try {
                 while (true) {
                     String url = queue.take();
@@ -53,7 +54,6 @@ public class KafkaProducerWorker {
                 logger.info("KafkaProducerWorker stopped");
             }
         });
-        workerThread.setDaemon(true);
         workerThread.setName("kafka-producer-worker");
         workerThread.start();
         logger.info("KafkaProducerWorker started, publishing to topic '{}'", topic);
@@ -61,5 +61,11 @@ public class KafkaProducerWorker {
 
     public void stop() {
         queue.offer(POISON_PILL);
+    }
+
+    public void awaitStop() throws InterruptedException {
+        if (workerThread != null) {
+            workerThread.join();
+        }
     }
 }

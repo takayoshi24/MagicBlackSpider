@@ -57,6 +57,7 @@ public class Main {
         System.out.println("Błędne / odrzucone: " + scheduler.getRejectedCount());
 
         producerWorker.stop();
+        producerWorker.awaitStop();
         htmlServer.stopServer();
     }
 }
