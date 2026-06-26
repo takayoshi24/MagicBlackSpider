@@ -1,5 +1,6 @@
 package com.github.takayoshi24.magicblackspider.handler;
 
+import com.github.takayoshi24.magicblackspider.Scheduler;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -20,14 +21,14 @@ import java.util.concurrent.BlockingQueue;
  */
 public class HTMLKafkaServer {
 
-    public static final int MAX_DISPLAY_ENTRIES = 1000;
-
     private final KafkaConsumer<String, String> consumer;
     private final BlockingQueue<String> messageQueue;
+    private final Scheduler scheduler;
     private volatile boolean running = false;
 
-    public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue) {
+    public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
+        this.scheduler = scheduler;
 
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -42,6 +43,19 @@ public class HTMLKafkaServer {
 
     public void startServer(int port) {
         Spark.port(port);
+
+        Spark.post("/seed", (req, res) -> {
+            String url = req.queryParams("url");
+            if (url != null && !url.isBlank()) {
+                url = url.trim();
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    url = "https://" + url;
+                }
+                scheduler.add(url, 0);
+            }
+            res.redirect("/");
+            return null;
+        });
 
         Spark.get("/", (req, res) -> {
             List<String> snapshot = new ArrayList<>(messageQueue);
@@ -72,6 +86,12 @@ public class HTMLKafkaServer {
             html.append("*{box-sizing:border-box;margin:0;padding:0}");
             html.append("body{background:#0f0f1a;color:#ccc;font-family:'Courier New',monospace;padding:24px 280px 24px 24px;min-height:100vh}");
             html.append("h1{color:#fff;font-size:18px;letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;padding-bottom:10px;border-bottom:1px solid #2a2a3e}");
+            html.append("#seed-panel{background:#13131f;border:1px solid #2a2a3e;border-radius:10px;padding:16px 20px;margin-bottom:24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}");
+            html.append("#seed-panel label{font-size:11px;color:#666;letter-spacing:2px;text-transform:uppercase;white-space:nowrap}");
+            html.append("#seed-panel input[type=text]{flex:1;min-width:260px;background:#0a0a14;border:1px solid #2a2a3e;border-radius:6px;padding:8px 12px;color:#e8e8f0;font-family:'Courier New',monospace;font-size:13px;outline:none}");
+            html.append("#seed-panel input[type=text]:focus{border-color:#7eb8ff}");
+            html.append("#seed-panel button{background:#1a3a5c;border:1px solid #7eb8ff44;border-radius:6px;padding:8px 18px;color:#7eb8ff;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap}");
+            html.append("#seed-panel button:hover{background:#1f4a75;border-color:#7eb8ff}");
             html.append("#stats{position:fixed;top:24px;right:24px;background:#13131f;border:1px solid #2a2a3e;border-radius:10px;padding:16px 20px;min-width:230px;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,0.6)}");
             html.append("#stats h3{font-size:11px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}");
             html.append("#stats .total{font-size:26px;font-weight:bold;color:#fff;margin-bottom:14px}");
@@ -109,6 +129,13 @@ public class HTMLKafkaServer {
             }
             html.append("</div>");
 
+            html.append("<div id='seed-panel'>");
+            html.append("<label>Add Domain</label>");
+            html.append("<form method='POST' action='/seed' style='display:flex;gap:8px;flex:1;flex-wrap:wrap'>");
+            html.append("<input type='text' name='url' placeholder='https://example.com' />");
+            html.append("<button type='submit'>Crawl</button>");
+            html.append("</form>");
+            html.append("</div>");
             html.append("<h1>&#x1F577; MagicBlackSpider &mdash; Crawled Pages</h1>");
             html.append("<table>");
             html.append("<thead><tr><th>#</th><th>Depth</th><th>Address</th></tr></thead>");
@@ -156,7 +183,6 @@ public class HTMLKafkaServer {
             while (running) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, String> record : records) {
-                    // Evict oldest to keep a sliding window of the latest MAX_DISPLAY_ENTRIES pages
                     while (!messageQueue.offer(record.value())) {
                         messageQueue.poll();
                     }
