@@ -18,6 +18,7 @@ public class Main {
         String kafkaServers = args.length > 2 ? args[2] : "localhost:9092";
         String kafkaTopic = args.length > 3 ? args[3] : "pages";
         int htmlPort = args.length > 4 ? Integer.parseInt(args[4]) : 4567;
+        int maxDepth = args.length > 5 ? Integer.parseInt(args[5]) : Integer.MAX_VALUE;
 
         // Scheduler
         Scheduler scheduler = new Scheduler();
@@ -32,7 +33,7 @@ public class Main {
         BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>();
 
         // PageHandler writes crawled URLs into the producer queue
-        PageHandler handler = new KafkaPageHandler(producerQueue);
+        PageHandler handler = new KafkaPageHandler(producerQueue, maxDepth);
 
         // Producer worker reads from producerQueue and publishes to Kafka
         KafkaProducerWorker producerWorker = new KafkaProducerWorker(kafkaServers, kafkaTopic, producerQueue);
