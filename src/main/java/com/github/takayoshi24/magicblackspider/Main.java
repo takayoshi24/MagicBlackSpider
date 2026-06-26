@@ -29,8 +29,8 @@ public class Main {
         // Queue from crawler to Kafka producer
         BlockingQueue<String> producerQueue = new LinkedBlockingQueue<>();
 
-        // Queue from Kafka consumer to HTML dashboard
-        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>();
+        // Queue from Kafka consumer to HTML dashboard — bounded to prevent unbounded memory growth
+        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>(HTMLKafkaServer.MAX_DISPLAY_ENTRIES);
 
         // PageHandler writes crawled URLs into the producer queue
         PageHandler handler = new KafkaPageHandler(producerQueue, maxDepth);
