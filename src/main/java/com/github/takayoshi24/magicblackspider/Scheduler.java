@@ -1,6 +1,8 @@
 package com.github.takayoshi24.magicblackspider;
 
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -9,10 +11,17 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Scheduler {
 
+    static final int MAX_SEEN_URLS = 500_000;
+
     public static final UrlWithDepth POISON_PILL = new UrlWithDepth("POISON_PILL", -1);
 
     private final LinkedBlockingQueue<UrlWithDepth> queue = new LinkedBlockingQueue<>();
-    private final Set<String> allUrls = new HashSet<>();
+    private final Set<String> allUrls = Collections.newSetFromMap(new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+            return size() > MAX_SEEN_URLS;
+        }
+    });
     private final ReentrantLock lock = new ReentrantLock();
     private int rejectedCount = 0;
     private final AtomicInteger visitedCount = new AtomicInteger(0);
