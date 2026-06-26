@@ -47,7 +47,6 @@ public class Main {
         System.out.println("Nieprzetworzone URL: " + scheduler.queueSize());
         System.out.println("Błędne / odrzucone: " + scheduler.getRejectedCount());
 
-        // Zamknięcie HTML servera można zostawić działającego, albo zamknąć w razie potrzeby
-        // htmlServer.stopServer();
+        htmlServer.stopServer();
     }
 }

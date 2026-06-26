@@ -18,6 +18,7 @@ public class HTMLKafkaServer {
 
     private final KafkaConsumer<String, String> consumer;
     private final BlockingQueue<String> messageQueue;
+    private volatile boolean running = false;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue) {
         this.messageQueue = messageQueue;
@@ -81,18 +82,21 @@ public class HTMLKafkaServer {
         });
 
         // w tle pobieranie z Kafki i dodawanie do kolejki
-        new Thread(() -> {
-            while (true) {
+        running = true;
+        Thread consumerThread = new Thread(() -> {
+            while (running) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, String> record : records) {
                     messageQueue.offer(record.value());
                 }
             }
-        }).start();
+        });
+        consumerThread.setDaemon(true);
+        consumerThread.start();
     }
 
-    // Opcjonalnie można dodać metodę stopServer() do zamykania Spark i konsumenta
     public void stopServer() {
+        running = false;
         consumer.close();
         Spark.stop();
     }
