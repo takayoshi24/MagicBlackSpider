@@ -66,10 +66,12 @@ public class MagicBlackSpider {
                     int depth = urlWithDepth.depth;
 
                     // Sprawdzenie robots.txt
-                    if (!robotsChecker.isAllowed(url)) return;
+                    String baseUrl = new java.net.URL(url).getProtocol() + "://" + new java.net.URL(url).getHost();
+                    RobotsTxtChecker.RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
+                    if (!robotsChecker.isAllowed(url, rules, baseUrl)) return;
 
-                    // Politeness
-                    politenessManager.ensurePolite(url);
+                    // Politeness — honour Crawl-delay from robots.txt when present
+                    politenessManager.ensurePolite(url, rules.crawlDelayMillis);
 
                     // Pobierz stronę
                     Document doc = fetcher.fetch(url);
