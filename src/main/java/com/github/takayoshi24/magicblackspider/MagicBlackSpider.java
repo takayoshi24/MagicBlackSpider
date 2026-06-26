@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,34 +29,47 @@ public class MagicBlackSpider {
     private final AtomicInteger processed = new AtomicInteger(0);
 
     public MagicBlackSpider(Scheduler scheduler, Fetcher fetcher, PageHandler handler, int threads, long politenessMillis) {
+        this(scheduler, fetcher, handler, threads, politenessMillis,
+                new PolitenessManager(politenessMillis), new RobotsTxtChecker());
+    }
+
+    MagicBlackSpider(Scheduler scheduler, Fetcher fetcher, PageHandler handler, int threads,
+                     long politenessMillis, PolitenessManager politenessManager, RobotsTxtChecker robotsChecker) {
         this.scheduler = scheduler;
         this.fetcher = fetcher;
         this.handler = handler;
         this.executor = Executors.newFixedThreadPool(threads);
         this.politenessMillis = politenessMillis;
-        this.politenessManager = new PolitenessManager(politenessMillis);
-        this.robotsChecker = new RobotsTxtChecker();
+        this.politenessManager = politenessManager;
+        this.robotsChecker = robotsChecker;
     }
 
     public void start(String seedUrl, int maxPages) throws InterruptedException {
         // Dodaj URL startowy z depth = 0
         scheduler.add(seedUrl, 0);
 
+        // Semaphore limits total submitted tasks to maxPages, preventing overshoot
+        // under concurrent processing (issue #11).
+        Semaphore pagePermits = new Semaphore(maxPages);
+
         // Główna pętla: pobieraj URL-e i submituj do executor
-        while (processed.get() < maxPages) {
+        while (pagePermits.tryAcquire(500, TimeUnit.MILLISECONDS)) {
             Scheduler.UrlWithDepth urlWithDepth = scheduler.next(500, TimeUnit.MILLISECONDS);
 
             if (urlWithDepth == null) {
-                continue; // timeout — workers may still be adding URLs
+                pagePermits.release(); // no URL available yet, give permit back
+                continue;
             }
 
             // Jeśli poison pill → zakończ pętlę
             if (urlWithDepth == Scheduler.POISON_PILL) {
                 logger.info("Otrzymano poison pill → kończymy crawl");
+                pagePermits.release();
                 break;
             }
 
-            // Submit tasku do executor
+            // Submit tasku do executor; permit is intentionally NOT released —
+            // each acquired permit represents one page slot consumed.
             executor.submit(() -> {
                 try {
                     String url = urlWithDepth.url;
