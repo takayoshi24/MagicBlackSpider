@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Produkcyjny PolitenessManager
@@ -23,46 +22,6 @@ public class PolitenessManager {
 
     public PolitenessManager(long defaultDelayMillis) {
         this.defaultDelayMillis = defaultDelayMillis;
-    }
-
-    /**
-     * Upewnia się, że żądanie do danego hosta jest "grzeczne"
-     * @param url URL do pobrania
-     * @param crawlDelayMillis opcjonalny crawl-delay z robots.txt, jeśli 0 użyje defaultDelay
-     */
-    public void ensurePolite(String url, long crawlDelayMillis) {
-        try {
-            String host = extractHost(url);
-            long delay = crawlDelayMillis > 0 ? crawlDelayMillis : defaultDelayMillis;
-
-            while (true) {
-                boolean[] shouldProceed = {false};
-                long[] sleepTime = {0};
-                lastAccessMap.compute(host, (h, last) -> {
-                    Instant now = Instant.now();
-                    if (last == null || now.toEpochMilli() - last.toEpochMilli() >= delay) {
-                        shouldProceed[0] = true;
-                        return now;
-                    }
-                    sleepTime[0] = delay - (now.toEpochMilli() - last.toEpochMilli());
-                    return last;
-                });
-                if (shouldProceed[0]) {
-                    break;
-                }
-                logger.debug("PolitenessManager: czekam {} ms dla hosta {}", sleepTime[0], host);
-                TimeUnit.MILLISECONDS.sleep(sleepTime[0]);
-            }
-        } catch (Exception e) {
-            logger.warn("PolitenessManager: błąd przy url {}: {}", url, e.getMessage());
-        }
-    }
-
-    /**
-     * Domyślna wersja bez crawl-delay
-     */
-    public void ensurePolite(String url) {
-        ensurePolite(url, 0);
     }
 
     /**
