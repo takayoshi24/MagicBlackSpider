@@ -43,12 +43,13 @@ public class KafkaPageHandler implements PageHandler {
 
             try {
                 URL newUrl = new URL(href);
+                String protocol = newUrl.getProtocol();
+                if (!protocol.equals("http") && !protocol.equals("https")) continue;
                 if (!newUrl.getHost().equalsIgnoreCase(baseDomain)) continue;
+                if (scheduler.add(href, depth + 1)) {
+                    newLinks++;
+                }
             } catch (Exception ignored) {}
-
-            if (scheduler.add(href, depth + 1)) {
-                newLinks++;
-            }
         }
 
         logger.debug("Dodano {} nowych linków z {}", newLinks, url);
