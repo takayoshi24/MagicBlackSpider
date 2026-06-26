@@ -10,7 +10,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 
 /**
@@ -48,14 +50,59 @@ public class HTMLKafkaServer {
             html.append(".depth1 { color: blue; }");
             html.append(".depth2 { color: orange; }");
             html.append(".depth3 { color: red; }");
-            html.append("body { background-color: gray; }");
+            html.append("body { background-color: gray; margin: 0; padding: 16px; }");
+            html.append("#stats {");
+            html.append("  position: fixed; top: 16px; right: 16px;");
+            html.append("  background: #1a1a2e; color: #eee;");
+            html.append("  border: 1px solid #444; border-radius: 8px;");
+            html.append("  padding: 14px 18px; min-width: 200px;");
+            html.append("  font-family: monospace; font-size: 13px;");
+            html.append("  box-shadow: 0 4px 12px rgba(0,0,0,0.5);");
+            html.append("  z-index: 999;");
+            html.append("}");
+            html.append("#stats h3 { margin: 0 0 10px 0; font-size: 14px; color: #aaa; letter-spacing: 1px; text-transform: uppercase; }");
+            html.append("#stats .total { font-size: 22px; font-weight: bold; color: #fff; margin-bottom: 10px; }");
+            html.append("#stats .row { display: flex; justify-content: space-between; margin: 4px 0; }");
+            html.append("#stats .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }");
+            html.append("#stats .c0 { background: green; } #stats .c1 { background: #4488ff; }");
+            html.append("#stats .c2 { background: orange; } #stats .c3 { background: red; }");
+            html.append("#stats .cnt { font-weight: bold; }");
             html.append("</style>");
             html.append("</head><body>");
-            html.append("<h1>Przetworzone strony</h1><ul>");
 
             List<String> snapshot = new ArrayList<>(messageQueue);
 
+            // count per depth for the stats panel
+            Map<Integer, Integer> depthCounts = new TreeMap<>();
             int counter = 1;
+            for (String msg : snapshot) {
+                String[] parts = msg.split("\\|", 2);
+                int depth = 0;
+                if (parts.length == 2) {
+                    try { depth = Integer.parseInt(parts[0]); } catch (NumberFormatException ignored) {}
+                }
+                depthCounts.merge(depth, 1, Integer::sum);
+            }
+
+            // stats panel
+            html.append("<div id='stats'>");
+            html.append("<h3>Crawler Stats</h3>");
+            html.append("<div class='total'>").append(snapshot.size()).append(" pages</div>");
+            String[] depthLabels = {"Depth 0", "Depth 1", "Depth 2", "Depth 3+"};
+            for (Map.Entry<Integer, Integer> e : depthCounts.entrySet()) {
+                int d = e.getKey();
+                int colorIdx = Math.min(d, 3);
+                String label = d <= 3 ? depthLabels[d] : "Depth " + d;
+                html.append("<div class='row'>")
+                    .append("<span><span class='dot c").append(colorIdx).append("'></span>").append(label).append("</span>")
+                    .append("<span class='cnt'>").append(e.getValue()).append("</span>")
+                    .append("</div>");
+            }
+            html.append("</div>");
+
+            html.append("<h1>Przetworzone strony</h1><ul>");
+
+            counter = 1;
             for (String msg : snapshot) {
                 // spodziewany format: depth|url
                 String[] parts = msg.split("\\|", 2);
@@ -70,7 +117,7 @@ public class HTMLKafkaServer {
                     }
                 }
 
-                String cssClass = "depth" + (depth > 3 ? 3 : depth); // maksymalna klasa depth3
+                String cssClass = "depth" + (depth > 3 ? 3 : depth);
                 html.append("<li class='").append(cssClass).append("'>")
                         .append(String.format("%03d: ", counter))
                         .append(url)
