@@ -26,8 +26,8 @@ public class KafkaPageHandler implements PageHandler {
         String url = page.getUrl();
         Document doc = page.getDocument();
 
-        // dodaj URL do Kafka
-        kafkaQueue.offer(url);
+        // dodaj URL do Kafka w formacie depth|url
+        kafkaQueue.offer(depth + "|" + url);
 
         // pobierz linki
         Elements links = doc.select("a[href]");
