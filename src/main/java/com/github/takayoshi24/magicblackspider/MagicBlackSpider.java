@@ -43,14 +43,10 @@ public class MagicBlackSpider {
 
         // Główna pętla: pobieraj URL-e i submituj do executor
         while (processed.get() < maxPages) {
-            Scheduler.UrlWithDepth urlWithDepth = scheduler.next();
+            Scheduler.UrlWithDepth urlWithDepth = scheduler.next(500, TimeUnit.MILLISECONDS);
 
             if (urlWithDepth == null) {
-                // Kolejka pusta – poczekaj chwilę i spróbuj ponownie
-                if (scheduler.isEmpty()) {
-                    Thread.sleep(100);
-                }
-                continue;
+                continue; // timeout — workers may still be adding URLs
             }
 
             // Jeśli poison pill → zakończ pętlę
