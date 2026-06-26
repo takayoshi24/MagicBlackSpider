@@ -4,6 +4,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Scheduler {
@@ -11,9 +12,11 @@ public class Scheduler {
     public static final UrlWithDepth POISON_PILL = new UrlWithDepth("POISON_PILL", -1);
 
     private final LinkedBlockingQueue<UrlWithDepth> queue = new LinkedBlockingQueue<>();
-    private final Set<String> allUrls = new HashSet<>(); // zbiór wszystkich URL: dodanych i odwiedzonych
+    private final Set<String> allUrls = new HashSet<>();
     private final ReentrantLock lock = new ReentrantLock();
     private int rejectedCount = 0;
+    private final AtomicInteger visitedCount = new AtomicInteger(0);
+    private volatile boolean poisonPillAdded = false;
 
     public static class UrlWithDepth {
         public final String url;
@@ -45,10 +48,11 @@ public class Scheduler {
     }
 
     public void markVisited(String url) {
-        // teraz wszystkie URL są już w allUrls, nie trzeba nic robić
+        visitedCount.incrementAndGet();
     }
 
     public void addPoisonPill() {
+        poisonPillAdded = true;
         queue.offer(POISON_PILL);
     }
 
@@ -58,16 +62,12 @@ public class Scheduler {
     }
 
     public int queueSize() {
-        return queue.size();
+        int size = queue.size();
+        return poisonPillAdded ? Math.max(0, size - 1) : size;
     }
 
     public int visitedSize() {
-        lock.lock();
-        try {
-            return allUrls.size() - queue.size();
-        } finally {
-            lock.unlock();
-        }
+        return visitedCount.get();
     }
 
     public int getRejectedCount() {
@@ -85,6 +85,8 @@ public class Scheduler {
             queue.clear();
             allUrls.clear();
             rejectedCount = 0;
+            visitedCount.set(0);
+            poisonPillAdded = false;
         } finally {
             lock.unlock();
         }
