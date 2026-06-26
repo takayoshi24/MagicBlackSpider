@@ -20,6 +20,8 @@ import java.util.concurrent.BlockingQueue;
  */
 public class HTMLKafkaServer {
 
+    public static final int MAX_DISPLAY_ENTRIES = 1000;
+
     private final KafkaConsumer<String, String> consumer;
     private final BlockingQueue<String> messageQueue;
     private volatile boolean running = false;
@@ -154,7 +156,10 @@ public class HTMLKafkaServer {
             while (running) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, String> record : records) {
-                    messageQueue.offer(record.value());
+                    // Evict oldest to keep a sliding window of the latest MAX_DISPLAY_ENTRIES pages
+                    while (!messageQueue.offer(record.value())) {
+                        messageQueue.poll();
+                    }
                 }
             }
         });
