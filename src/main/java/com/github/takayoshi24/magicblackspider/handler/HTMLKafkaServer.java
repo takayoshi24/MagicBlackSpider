@@ -112,11 +112,11 @@ public class HTMLKafkaServer {
         });
 
         app.post("/seed", ctx -> {
-            if (!csrfToken.equals(ctx.queryParam("_csrf"))) {
+            if (!csrfToken.equals(ctx.formParam("_csrf"))) {
                 ctx.status(403).result("Forbidden");
                 return;
             }
-            String url = ctx.queryParam("url");
+            String url = ctx.formParam("url");
             if (url != null && !url.isBlank()) {
                 url = url.trim();
                 if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -140,7 +140,7 @@ public class HTMLKafkaServer {
         });
 
         app.post("/clear", ctx -> {
-            if (!csrfToken.equals(ctx.queryParam("_csrf"))) {
+            if (!csrfToken.equals(ctx.formParam("_csrf"))) {
                 ctx.status(403).result("Forbidden");
                 return;
             }
@@ -152,7 +152,7 @@ public class HTMLKafkaServer {
         });
 
         app.post("/download", ctx -> {
-            if (!csrfToken.equals(ctx.queryParam("_csrf"))) {
+            if (!csrfToken.equals(ctx.formParam("_csrf"))) {
                 ctx.status(403).result("Forbidden");
                 return;
             }
