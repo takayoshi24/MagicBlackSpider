@@ -133,6 +133,8 @@ public class HTMLKafkaServer {
             // stats panel
             html.append("<div id='stats'>");
             html.append("<h3>Crawler Stats</h3>");
+            html.append("<div class='timer-label'>Crawl Time</div>");
+            html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
             html.append("<div class='total'>").append(snapshot.size()).append("<span>pages crawled</span></div>");
             for (Map.Entry<Integer, Integer> e : depthCounts.entrySet()) {
                 int d = e.getKey();
@@ -142,8 +144,6 @@ public class HTMLKafkaServer {
                     .append("<span class='cnt'>").append(e.getValue()).append("</span>")
                     .append("</div>");
             }
-            html.append("<div class='timer-label'>Crawl Time</div>");
-            html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
             html.append("</div>");
 
             html.append("<div id='seed-panel'>");
