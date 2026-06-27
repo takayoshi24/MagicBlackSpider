@@ -2,10 +2,12 @@ package com.github.takayoshi24.magicblackspider.handler;
 
 import com.github.takayoshi24.magicblackspider.Scheduler;
 import com.github.takayoshi24.magicblackspider.fetcher.SimpleFetcher;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.config.SslConfigs;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -62,6 +64,11 @@ public class HTMLKafkaServer {
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SSL");
+        props.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG,
+                System.getenv().getOrDefault("KAFKA_SSL_TRUSTSTORE_LOCATION", "certs/kafka.truststore.jks"));
+        props.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
+                System.getenv().getOrDefault("KAFKA_SSL_STORE_PASSWORD", "changeit"));
 
         consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singletonList(topic));
