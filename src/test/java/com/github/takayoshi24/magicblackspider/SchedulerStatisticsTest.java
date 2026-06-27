@@ -2,6 +2,9 @@ package com.github.takayoshi24.magicblackspider;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class SchedulerStatisticsTest {
@@ -58,5 +61,37 @@ class SchedulerStatisticsTest {
         scheduler.markVisited("http://example.com/2");
 
         assertEquals(2, scheduler.visitedSize());
+    }
+
+    @Test
+    void visitedSize_isZeroAfterResetUnderConcurrentMarkVisited() throws InterruptedException {
+        // Regression test for race: markVisited() must hold lock so it cannot
+        // interleave with reset(), preventing ghost increments surviving a reset.
+        Scheduler scheduler = new Scheduler();
+        int workers = 20;
+        CountDownLatch go = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(workers);
+
+        for (int i = 0; i < workers; i++) {
+            int n = i;
+            Thread t = new Thread(() -> {
+                try { go.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                for (int j = 0; j < 500; j++) {
+                    scheduler.markVisited("http://example.com/" + n + "/" + j);
+                }
+                done.countDown();
+            });
+            t.setDaemon(true);
+            t.start();
+        }
+
+        go.countDown();
+        Thread.sleep(1); // let some markVisited() calls accumulate
+        scheduler.reset();
+        done.await(5, TimeUnit.SECONDS);
+
+        scheduler.reset();
+        assertEquals(0, scheduler.visitedSize(),
+                "visitedSize() must be 0 after reset regardless of concurrent markVisited() calls");
     }
 }
