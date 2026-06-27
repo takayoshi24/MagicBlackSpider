@@ -26,6 +26,7 @@ public class HTMLKafkaServer {
     private final Scheduler scheduler;
     private volatile boolean running = false;
     private Thread consumerThread;
+    private volatile long crawlStartTime = 0;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
@@ -52,13 +53,22 @@ public class HTMLKafkaServer {
                 if (!url.startsWith("http://") && !url.startsWith("https://")) {
                     url = "https://" + url;
                 }
+                crawlStartTime = System.currentTimeMillis();
                 scheduler.add(url, 0);
             }
             res.redirect("/");
             return null;
         });
 
+        Spark.post("/clear", (req, res) -> {
+            messageQueue.clear();
+            crawlStartTime = 0;
+            res.redirect("/");
+            return null;
+        });
+
         Spark.get("/", (req, res) -> {
+            long startTime = crawlStartTime;
             List<String> snapshot = new ArrayList<>(messageQueue);
 
             // parse messages and count per depth
@@ -100,6 +110,10 @@ public class HTMLKafkaServer {
             html.append("#stats .row{display:flex;justify-content:space-between;align-items:center;margin:5px 0;font-size:12px}");
             html.append("#stats .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex-shrink:0}");
             html.append("#stats .cnt{font-weight:bold;color:#fff}");
+            html.append("#stats .timer-label{font-size:10px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-top:14px;margin-bottom:4px}");
+            html.append("#stats .timer{font-size:20px;font-weight:bold;color:#7eb8ff;letter-spacing:3px;font-variant-numeric:tabular-nums}");
+            html.append(".btn-clear{background:#2a0a0a;border:1px solid #7b2222;border-radius:6px;padding:8px 18px;color:#e07070;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap}");
+            html.append(".btn-clear:hover{background:#3a0e0e;border-color:#e07070}");
             html.append("table{width:100%;border-collapse:collapse}");
             html.append("thead th{text-align:left;padding:8px 12px;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #2a2a3e;font-weight:normal}");
             html.append("tbody tr{border-bottom:1px solid #16161f}");
@@ -128,6 +142,8 @@ public class HTMLKafkaServer {
                     .append("<span class='cnt'>").append(e.getValue()).append("</span>")
                     .append("</div>");
             }
+            html.append("<div class='timer-label'>Crawl Time</div>");
+            html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
             html.append("</div>");
 
             html.append("<div id='seed-panel'>");
@@ -135,6 +151,9 @@ public class HTMLKafkaServer {
             html.append("<form method='POST' action='/seed' style='display:flex;gap:8px;flex:1;flex-wrap:wrap'>");
             html.append("<input type='text' name='url' placeholder='https://example.com' />");
             html.append("<button type='submit'>Crawl</button>");
+            html.append("</form>");
+            html.append("<form method='POST' action='/clear'>");
+            html.append("<button type='submit' class='btn-clear'>Clear Data</button>");
             html.append("</form>");
             html.append("</div>");
             html.append("<h1>&#x1F577; MagicBlackSpider &mdash; Crawled Pages</h1>");
@@ -174,7 +193,20 @@ public class HTMLKafkaServer {
                 html.append("</tr>");
             }
 
-            html.append("</tbody></table></body></html>");
+            html.append("</tbody></table>");
+            html.append("<script>");
+            html.append("var startMs=").append(startTime).append(";");
+            html.append("var el=document.getElementById('crawl-timer');");
+            html.append("function pad(n){return String(n).padStart(2,'0');}");
+            html.append("function tick(){");
+            html.append("  if(startMs===0){el.textContent='--:--:--';return;}");
+            html.append("  var elapsed=Math.floor((Date.now()-startMs)/1000);");
+            html.append("  if(elapsed<0)elapsed=0;");
+            html.append("  el.textContent=pad(Math.floor(elapsed/3600))+':'+pad(Math.floor((elapsed%3600)/60))+':'+pad(elapsed%60);");
+            html.append("}");
+            html.append("tick();setInterval(tick,1000);");
+            html.append("</script>");
+            html.append("</body></html>");
             return html.toString();
         });
 
