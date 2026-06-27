@@ -140,6 +140,8 @@ public class HTMLKafkaServer {
                 depthCounts.merge(depth, 1, Integer::sum);
             }
 
+            res.header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; object-src 'none'");
+
             StringBuilder html = new StringBuilder("<!DOCTYPE html><html><head>");
             html.append("<meta charset='UTF-8'>");
             html.append("<title>MagicBlackSpider</title>");
@@ -239,7 +241,7 @@ public class HTMLKafkaServer {
                 html.append("<td class='num'>").append(String.format("%03d", i + 1)).append("</td>");
                 html.append("<td><span class='badge' style='background:").append(color).append("22;color:").append(color)
                     .append(";border:1px solid ").append(color).append("55'>D").append(depth).append("</span></td>");
-                html.append("<td><a class='url-link' href='").append(escapeHtml(url)).append("' target='_blank'>");
+                html.append("<td><a class='url-link' href='").append(safeHref(url)).append("' target='_blank'>");
                 html.append("<div class='host-row'>");
                 if (!scheme.isEmpty()) html.append("<span class='scheme'>").append(escapeHtml(scheme)).append("</span>");
                 html.append("<span class='host'>").append(escapeHtml(host)).append("</span>");
@@ -313,6 +315,12 @@ public class HTMLKafkaServer {
 
     private static String escapeHtml(String text) {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#x27;");
+    }
+
+    static String safeHref(String url) {
+        if (url == null) return "#";
+        String lower = url.trim().toLowerCase(java.util.Locale.ROOT);
+        return (lower.startsWith("http://") || lower.startsWith("https://")) ? escapeHtml(url) : "#";
     }
 
     private byte[] generateDocx(List<String> urlList, List<int[]> depthList,
