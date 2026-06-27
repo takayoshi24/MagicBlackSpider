@@ -281,7 +281,7 @@ public class HTMLKafkaServer {
             html.append("#stats .live-val.warn{color:#e07070}");
             html.append("#stats .live-val.accent{color:#7eb8ff}");
             html.append("#stats .rate-val{font-size:15px;font-weight:bold;color:#6fcf97;letter-spacing:1px}");
-            html.append("#depth-panel{position:fixed;top:370px;right:24px;background:#13131f;border:1px solid #2a2a3e;border-radius:10px;padding:16px 20px;min-width:180px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.6);cursor:move;user-select:none}");
+            html.append("#depth-panel{position:fixed;right:24px;background:#13131f;border:1px solid #2a2a3e;border-radius:10px;padding:16px 20px;min-width:180px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.6);cursor:move;user-select:none}");
             html.append("#depth-panel h3{font-size:11px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}");
             html.append("#depth-panel .row{display:flex;justify-content:space-between;align-items:center;margin:5px 0;font-size:12px}");
             html.append("#depth-panel .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex-shrink:0}");
@@ -325,7 +325,7 @@ public class HTMLKafkaServer {
 
             html.append("<script>");
             html.append("var sseToken='").append(csrfToken).append("';");
-            html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null;");
+            html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null,depthPanelDragged=false;");
             html.append("var liveQueue=0,liveInFlight=0,liveRejected=0,liveFailed=0,liveRobotsBlocked=0,liveProcessed=0;");
             html.append("var uniqueHosts=new Set();");
             html.append("var spidersRunning=false,spiders=[];");
@@ -468,13 +468,22 @@ public class HTMLKafkaServer {
             html.append("el.style.left=r.left+'px';");
             html.append("el.style.top=r.top+'px';");
             html.append("sx=e.clientX-r.left;sy=e.clientY-r.top;");
+            html.append("depthPanelDragged=true;");
             html.append("document.addEventListener('mousemove',move);");
             html.append("document.addEventListener('mouseup',up);");
             html.append("});");
             html.append("function move(e){el.style.left=(e.clientX-sx)+'px';el.style.top=(e.clientY-sy)+'px';}");
             html.append("function up(){document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);}");
-            html.append("");
             html.append("})();");
+            html.append("function positionDepthPanel(){");
+            html.append("if(depthPanelDragged)return;");
+            html.append("var stats=document.getElementById('stats');");
+            html.append("var dp=document.getElementById('depth-panel');");
+            html.append("if(!stats||!dp)return;");
+            html.append("dp.style.top=(stats.getBoundingClientRect().bottom+16)+'px';");
+            html.append("}");
+            html.append("positionDepthPanel();");
+            html.append("window.addEventListener('resize',positionDepthPanel);");
             html.append("</script>");
             html.append("</body></html>");
             ctx.html(html.toString());
