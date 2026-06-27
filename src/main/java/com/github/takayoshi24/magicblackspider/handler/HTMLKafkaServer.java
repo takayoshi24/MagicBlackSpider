@@ -17,7 +17,8 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Spark;
+import io.javalin.Javalin;
+import io.javalin.http.UnauthorizedResponse;
 
 import java.io.ByteArrayOutputStream;
 import java.security.SecureRandom;
@@ -45,6 +46,7 @@ public class HTMLKafkaServer {
     private final Scheduler scheduler;
     private volatile boolean running = false;
     private Thread consumerThread;
+    private Javalin app;
     private volatile long crawlStartTime = 0;
     private volatile long crawlEndTime = 0;
     private volatile String seedUrl = "";
@@ -86,76 +88,73 @@ public class HTMLKafkaServer {
     }
 
     public void startServer(int port) {
-        Spark.ipAddress("127.0.0.1");
-        Spark.port(port);
-
         log.info("[AUTH] MagicBlackSpider UI — credentials: admin / {}", apiKey);
         log.info("[AUTH] Open http://127.0.0.1:{}/ in your browser and enter these when prompted.", port);
 
-        Spark.before((req, res) -> {
-            String auth = req.headers("Authorization");
+        app = Javalin.create().start("127.0.0.1", port);
+
+        app.before(ctx -> {
+            String auth = ctx.header("Authorization");
             if (auth != null && auth.startsWith("Basic ")) {
                 String decoded = new String(java.util.Base64.getDecoder().decode(auth.substring(6)));
                 if (("admin:" + apiKey).equals(decoded)) return;
             }
-            res.header("WWW-Authenticate", "Basic realm=\"MagicBlackSpider\"");
-            Spark.halt(401, "Unauthorized");
+            ctx.header("WWW-Authenticate", "Basic realm=\"MagicBlackSpider\"");
+            throw new UnauthorizedResponse("Unauthorized");
         });
 
-        Spark.after((req, res) -> {
-            res.header("Content-Security-Policy",
+        app.after(ctx -> {
+            ctx.header("Content-Security-Policy",
                     "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; object-src 'none'");
-            res.header("X-Frame-Options", "DENY");
-            res.header("X-Content-Type-Options", "nosniff");
-            res.header("Referrer-Policy", "no-referrer");
+            ctx.header("X-Frame-Options", "DENY");
+            ctx.header("X-Content-Type-Options", "nosniff");
+            ctx.header("Referrer-Policy", "no-referrer");
         });
 
-        Spark.post("/seed", (req, res) -> {
-            if (!csrfToken.equals(req.queryParams("_csrf"))) {
-                res.status(403);
-                return "Forbidden";
+        app.post("/seed", ctx -> {
+            if (!csrfToken.equals(ctx.queryParam("_csrf"))) {
+                ctx.status(403).result("Forbidden");
+                return;
             }
-            String url = req.queryParams("url");
+            String url = ctx.queryParam("url");
             if (url != null && !url.isBlank()) {
                 url = url.trim();
                 if (!url.startsWith("http://") && !url.startsWith("https://")) {
                     url = "https://" + url;
                 }
                 if (SimpleFetcher.isBlockedUrl(url)) {
-                    res.status(400);
-                    return "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Blocked</title>"
+                    ctx.status(400).html("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Blocked</title>"
                             + "<style>body{background:#0f0f1a;color:#e07070;font-family:'Courier New',monospace;"
                             + "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
                             + "div{text-align:center}a{color:#7eb8ff}</style></head><body>"
                             + "<div><h2>Blocked</h2><p>The URL resolves to a private or loopback address "
-                            + "and cannot be crawled.</p><p><a href='/'>&#8592; Back</a></p></div></body></html>";
+                            + "and cannot be crawled.</p><p><a href='/'>&#8592; Back</a></p></div></body></html>");
+                    return;
                 }
                 crawlStartTime = System.currentTimeMillis();
                 crawlEndTime = 0;
                 seedUrl = url;
                 scheduler.add(url, 0);
             }
-            res.redirect("/");
-            return null;
+            ctx.redirect("/");
         });
 
-        Spark.post("/clear", (req, res) -> {
-            if (!csrfToken.equals(req.queryParams("_csrf"))) {
-                res.status(403);
-                return "Forbidden";
+        app.post("/clear", ctx -> {
+            if (!csrfToken.equals(ctx.queryParam("_csrf"))) {
+                ctx.status(403).result("Forbidden");
+                return;
             }
             messageQueue.clear();
             crawlStartTime = 0;
             crawlEndTime = 0;
             seedUrl = "";
-            res.redirect("/");
-            return null;
+            ctx.redirect("/");
         });
 
-        Spark.post("/download", (req, res) -> {
-            if (!csrfToken.equals(req.queryParams("_csrf"))) {
-                res.status(403);
-                return "Forbidden";
+        app.post("/download", ctx -> {
+            if (!csrfToken.equals(ctx.queryParam("_csrf"))) {
+                ctx.status(403).result("Forbidden");
+                return;
             }
             List<String> snapshot = new ArrayList<>(messageQueue);
             Map<Integer, Integer> depthCounts = new TreeMap<>();
@@ -176,21 +175,17 @@ public class HTMLKafkaServer {
 
             byte[] docx = generateDocx(urlList, depthList, depthCounts, crawlStartTime, crawlEndTime, seedUrl);
 
-            res.type("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-            res.header("Content-Disposition", "attachment; filename=\"crawl-report.docx\"");
-            res.raw().setContentLength(docx.length);
-            res.raw().getOutputStream().write(docx);
-            res.raw().getOutputStream().flush();
+            ctx.contentType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            ctx.header("Content-Disposition", "attachment; filename=\"crawl-report.docx\"");
+            ctx.result(docx);
 
             messageQueue.clear();
             crawlStartTime = 0;
             crawlEndTime = 0;
             seedUrl = "";
-
-            return null;
         });
 
-        Spark.get("/", (req, res) -> {
+        app.get("/", ctx -> {
             long startTime = crawlStartTime;
             long endTime = crawlEndTime;
             List<String> snapshot = new ArrayList<>(messageQueue);
@@ -342,7 +337,7 @@ public class HTMLKafkaServer {
             html.append("tick();if(endMs===0)setInterval(tick,1000);");
             html.append("</script>");
             html.append("</body></html>");
-            return html.toString();
+            ctx.html(html.toString());
         });
 
         // w tle pobieranie z Kafki i dodawanie do kolejki
@@ -379,7 +374,9 @@ public class HTMLKafkaServer {
                 Thread.currentThread().interrupt();
             }
         }
-        Spark.stop();
+        if (app != null) {
+            app.stop();
+        }
     }
 
     // HSL golden-angle distribution — each depth gets a visually distinct hue

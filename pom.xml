@@ -35,9 +35,9 @@
             <version>4.1.0</version>
         </dependency>
         <dependency>
-            <groupId>com.sparkjava</groupId>
-            <artifactId>spark-core</artifactId>
-            <version>2.9.4</version>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+            <version>6.3.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.poi</groupId>
