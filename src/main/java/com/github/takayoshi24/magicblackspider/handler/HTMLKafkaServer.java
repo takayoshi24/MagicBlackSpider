@@ -207,9 +207,11 @@ public class HTMLKafkaServer {
                 client.ctx().status(403);
                 return;
             }
-            // Send current state and a full snapshot so the client builds the table from scratch
-            client.sendEvent("state", buildStateJson());
+            // Send current state and a full snapshot so the client builds the table from scratch.
+            // clear_table must come before state so the clear_table handler's stopSpiders() call
+            // does not undo the startSpiders() triggered by applyState().
             client.sendEvent("clear_table", "{}");
+            client.sendEvent("state", buildStateJson());
             for (String msg : new ArrayList<>(messageQueue)) {
                 client.sendEvent("url", msg);
             }
