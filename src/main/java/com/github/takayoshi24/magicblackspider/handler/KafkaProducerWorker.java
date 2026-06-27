@@ -35,6 +35,8 @@ public class KafkaProducerWorker {
                 System.getenv().getOrDefault("KAFKA_SSL_TRUSTSTORE_LOCATION", "certs/kafka.truststore.jks"));
         props.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
                 System.getenv().getOrDefault("KAFKA_SSL_STORE_PASSWORD", "changeit"));
+        // Disable hostname verification for self-signed dev certs; the CA trust anchor is still enforced.
+        props.put(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, "");
 
         this.producer = new KafkaProducer<>(props);
     }
