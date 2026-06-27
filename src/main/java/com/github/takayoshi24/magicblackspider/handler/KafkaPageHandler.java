@@ -40,7 +40,9 @@ public class KafkaPageHandler implements PageHandler {
         String baseDomain = "";
         try {
             baseDomain = new URL(url).getHost();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            logger.warn("Failed to extract domain from URL: {}", url, e);
+        }
 
         int newLinks = 0;
         for (Element link : links) {
@@ -55,7 +57,9 @@ public class KafkaPageHandler implements PageHandler {
                 if (depth + 1 <= maxDepth && scheduler.add(href, depth + 1)) {
                     newLinks++;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                logger.warn("Failed to parse URL during link extraction: {}", href, e);
+            }
         }
 
         logger.debug("Dodano {} nowych linków z {}", newLinks, url);
