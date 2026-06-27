@@ -7,8 +7,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -20,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class SimpleFetcher implements Fetcher {
 
     private static final Logger logger = LoggerFactory.getLogger(SimpleFetcher.class);
+    private static final int MAX_REDIRECTS = 5;
 
     private final int timeoutMillis;
     private final int maxRetries;
@@ -47,16 +50,7 @@ public class SimpleFetcher implements Fetcher {
         while (attempt < maxRetries) {
             try {
                 logger.debug("Fetching URL (attempt {}): {}", attempt + 1, url);
-                Connection.Response response = Jsoup.connect(url)
-                        .userAgent(userAgent)
-                        .timeout(timeoutMillis)
-                        .followRedirects(true)
-                        .execute();
-                if (response.statusCode() >= 400) {
-                    logger.warn("HTTP {} for URL: {}", response.statusCode(), url);
-                    return null;
-                }
-                return response.parse();
+                return fetchWithRedirects(url);
             } catch (IOException e) {
                 attempt++;
                 logger.warn("Błąd pobierania URL {} ({}), próba {}/{}", url, e.getMessage(), attempt, maxRetries);
@@ -71,5 +65,64 @@ public class SimpleFetcher implements Fetcher {
             }
         }
         throw new IOException("Nie udało się pobrać URL po " + maxRetries + " próbach: " + url);
+    }
+
+    private Document fetchWithRedirects(String url) throws IOException {
+        String current = url;
+        for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+            Connection.Response response = Jsoup.connect(current)
+                    .userAgent(userAgent)
+                    .timeout(timeoutMillis)
+                    .followRedirects(false)
+                    .execute();
+            int status = response.statusCode();
+            if (status >= 300 && status < 400) {
+                String location = response.header("Location");
+                if (location == null || location.isBlank()) {
+                    throw new IOException("Redirect without Location header from: " + current);
+                }
+                try {
+                    location = new URI(current).resolve(location.trim()).toString();
+                } catch (URISyntaxException e) {
+                    throw new IOException("Malformed redirect Location: " + location, e);
+                }
+                if (isBlockedUrl(location)) {
+                    throw new IOException("Redirect to blocked address rejected: " + location);
+                }
+                logger.debug("Following redirect {} -> {}", current, location);
+                current = location;
+                continue;
+            }
+            if (status >= 400) {
+                logger.warn("HTTP {} for URL: {}", status, current);
+                return null;
+            }
+            return response.parse();
+        }
+        throw new IOException("Too many redirects for URL: " + url);
+    }
+
+    /**
+     * Returns true if the URL's resolved host is a loopback, link-local, or private (RFC-1918) address.
+     * Treats unresolvable or malformed URLs as blocked.
+     */
+    static boolean isBlockedUrl(String url) {
+        try {
+            String host = new URI(url).getHost();
+            if (host == null) return true;
+            for (InetAddress addr : InetAddress.getAllByName(host)) {
+                if (isPrivateAddress(addr)) return true;
+            }
+            return false;
+        } catch (URISyntaxException | UnknownHostException e) {
+            return true;
+        }
+    }
+
+    private static boolean isPrivateAddress(InetAddress addr) {
+        return addr.isLoopbackAddress()
+                || addr.isLinkLocalAddress()
+                || addr.isSiteLocalAddress()
+                || addr.isAnyLocalAddress();
     }
 }
