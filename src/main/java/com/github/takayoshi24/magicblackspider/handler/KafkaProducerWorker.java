@@ -39,8 +39,11 @@ public class KafkaProducerWorker {
         props.put(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG, "TLSv1.2,TLSv1.3");
         // Disable hostname verification for self-signed dev certs; the CA trust anchor is still enforced.
         props.put(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, "");
-        logger.info("[Kafka producer] truststore: {} exists={}", new java.io.File(truststorePath).getAbsolutePath(),
-                new java.io.File(truststorePath).exists());
+        logger.info("[Kafka producer] SSL config — bootstrap={} truststore={} exists={} protocols={}",
+                bootstrapServers,
+                new java.io.File(truststorePath).getAbsolutePath(),
+                new java.io.File(truststorePath).exists(),
+                props.get(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG));
 
         this.producer = new KafkaProducer<>(props);
     }

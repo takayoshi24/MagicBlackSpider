@@ -99,6 +99,7 @@ public class HTMLKafkaServer {
                 String decoded = new String(java.util.Base64.getDecoder().decode(auth.substring(6)));
                 if (("admin:" + apiKey).equals(decoded)) return;
             }
+            log.warn("[AUTH] Failed authentication attempt from {}", ctx.ip());
             ctx.header("WWW-Authenticate", "Basic realm=\"MagicBlackSpider\"");
             throw new UnauthorizedResponse("Unauthorized");
         });
@@ -113,6 +114,7 @@ public class HTMLKafkaServer {
 
         app.post("/seed", ctx -> {
             if (!csrfToken.equals(ctx.formParam("_csrf"))) {
+                log.warn("[CSRF] CSRF validation failed on /seed from {}", ctx.ip());
                 ctx.status(403).result("Forbidden");
                 return;
             }
@@ -123,6 +125,7 @@ public class HTMLKafkaServer {
                     url = "https://" + url;
                 }
                 if (SimpleFetcher.isBlockedUrl(url)) {
+                    log.warn("[SSRF] Blocked private-network URL '{}' submitted from {}", url, ctx.ip());
                     ctx.status(400).html("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Blocked</title>"
                             + "<style>body{background:#0f0f1a;color:#e07070;font-family:'Courier New',monospace;"
                             + "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
@@ -131,6 +134,7 @@ public class HTMLKafkaServer {
                             + "and cannot be crawled.</p><p><a href='/'>&#8592; Back</a></p></div></body></html>");
                     return;
                 }
+                log.info("[SEED] Crawl started: url='{}' from={}", url, ctx.ip());
                 crawlStartTime = System.currentTimeMillis();
                 crawlEndTime = 0;
                 seedUrl = url;
@@ -141,6 +145,7 @@ public class HTMLKafkaServer {
 
         app.post("/clear", ctx -> {
             if (!csrfToken.equals(ctx.formParam("_csrf"))) {
+                log.warn("[CSRF] CSRF validation failed on /clear from {}", ctx.ip());
                 ctx.status(403).result("Forbidden");
                 return;
             }
@@ -153,6 +158,7 @@ public class HTMLKafkaServer {
 
         app.post("/download", ctx -> {
             if (!csrfToken.equals(ctx.formParam("_csrf"))) {
+                log.warn("[CSRF] CSRF validation failed on /download from {}", ctx.ip());
                 ctx.status(403).result("Forbidden");
                 return;
             }

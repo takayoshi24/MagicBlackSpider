@@ -97,6 +97,7 @@ public class MagicBlackSpider {
                 RobotsTxtChecker.RobotsTxtRules rules = robotsChecker.fetchRules(baseUrl);
 
                 if (!robotsChecker.isAllowed(url, rules, baseUrl)) {
+                    logger.info("[ROBOTS] Denied by robots.txt: {}", url);
                     pagePermits.release();
                     continue;
                 }
@@ -105,6 +106,7 @@ public class MagicBlackSpider {
                 // briefly before the next dispatch iteration.
                 long waitMs = politenessManager.tryAcquire(url, rules.crawlDelayMillis);
                 if (waitMs > 0) {
+                    logger.debug("[POLITENESS] Requeued {} — host not ready for {}ms", url, waitMs);
                     pagePermits.release();
                     scheduler.requeue(urlWithDepth);
                     TimeUnit.MILLISECONDS.sleep(Math.min(waitMs, 100));

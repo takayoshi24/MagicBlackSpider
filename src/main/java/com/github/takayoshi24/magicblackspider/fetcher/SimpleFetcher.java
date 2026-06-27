@@ -47,6 +47,7 @@ public class SimpleFetcher implements Fetcher {
     @Override
     public Document fetch(String url) throws IOException {
         if (isBlockedUrl(url)) {
+            logger.warn("[SSRF] Blocked fetch attempt to private/loopback address: {}", url);
             throw new IOException("Blocked URL (private/loopback address): " + url);
         }
         int attempt = 0;
