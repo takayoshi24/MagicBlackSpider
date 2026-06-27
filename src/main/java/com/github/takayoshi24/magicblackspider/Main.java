@@ -29,8 +29,9 @@ public class Main {
         // Queue from crawler to Kafka producer
         BlockingQueue<String> producerQueue = new LinkedBlockingQueue<>();
 
-        // Queue from Kafka consumer to HTML dashboard — bounded by maxPages so all crawled pages are shown
-        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>(maxPages);
+        // Queue from Kafka consumer to HTML dashboard — capped independently of maxPages to prevent heap exhaustion
+        int displayQueueCapacity = Math.min(maxPages, 10_000);
+        BlockingQueue<String> displayQueue = new LinkedBlockingQueue<>(displayQueueCapacity);
 
         // PageHandler writes crawled URLs into the producer queue
         PageHandler handler = new KafkaPageHandler(producerQueue, maxDepth);
