@@ -165,7 +165,7 @@ public class HTMLKafkaServer {
             html.append("#stats .timer{font-size:20px;font-weight:bold;color:#7eb8ff;letter-spacing:3px;font-variant-numeric:tabular-nums}");
             html.append(".btn-clear{background:#2a0a0a;border:1px solid #7b2222;border-radius:6px;padding:8px 18px;color:#e07070;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap}");
             html.append(".btn-clear:hover{background:#3a0e0e;border-color:#e07070}");
-            html.append(".btn-download{background:#0a2a1a;border:1px solid #226644;border-radius:6px;padding:8px 18px;color:#6fcf97;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap;width:100%;margin-top:12px}");
+            html.append(".btn-download{background:#0a2a1a;border:1px solid #226644;border-radius:6px;padding:8px 18px;color:#6fcf97;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap;width:100%;margin-bottom:12px}");
             html.append(".btn-download:hover{background:#0e3a22;border-color:#6fcf97}");
             html.append("table{width:100%;border-collapse:collapse}");
             html.append("thead th{text-align:left;padding:8px 12px;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #2a2a3e;font-weight:normal}");
@@ -185,6 +185,9 @@ public class HTMLKafkaServer {
 
             // stats panel
             html.append("<div id='stats'>");
+            html.append("<form method='POST' action='/download'>");
+            html.append("<button type='submit' class='btn-download'>&#x2B07; Download Report &amp; Clear</button>");
+            html.append("</form>");
             html.append("<h3>Crawler Stats</h3>");
             html.append("<div class='timer-label'>Crawl Time</div>");
             html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
@@ -197,9 +200,6 @@ public class HTMLKafkaServer {
                     .append("<span class='cnt'>").append(e.getValue()).append("</span>")
                     .append("</div>");
             }
-            html.append("<form method='POST' action='/download'>");
-            html.append("<button type='submit' class='btn-download'>&#x2B07; Download Report &amp; Clear</button>");
-            html.append("</form>");
             html.append("</div>");
 
             html.append("<div id='seed-panel'>");
