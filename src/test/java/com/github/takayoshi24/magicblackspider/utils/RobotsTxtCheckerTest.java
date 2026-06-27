@@ -152,6 +152,23 @@ class RobotsTxtCheckerTest {
         assertEquals(RobotsTxtChecker.MAX_CRAWL_DELAY_MILLIS, rules.crawlDelayMillis);
     }
 
+    // --- Fix for issue #72: malformed URL must be denied, not allowed ---
+
+    @Test
+    void isAllowed_malformedUrl_returnsDenied() {
+        RobotsTxtChecker.RobotsTxtRules rules = new RobotsTxtChecker.RobotsTxtRules();
+        // A URL that java.net.URL cannot parse will throw in isAllowed(); it must return false.
+        assertFalse(checker.isAllowed("not a valid url ://:::", rules, "http://example.com"),
+                "Malformed URL must be denied, not allowed");
+    }
+
+    @Test
+    void isAllowed_malformedUrl_singleArgOverload_returnsDenied() {
+        // The single-arg convenience overload already had the correct behaviour; verify it too.
+        assertFalse(checker.isAllowed("not a valid url ://:::"),
+                "Single-arg overload must deny malformed URLs");
+    }
+
     // --- Fix for issue #30: concurrent fetchRules must not trigger multiple downloads ---
 
     @Test
