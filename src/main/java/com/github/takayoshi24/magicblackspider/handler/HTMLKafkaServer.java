@@ -15,6 +15,8 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import spark.Spark;
 
 import java.io.ByteArrayOutputStream;
@@ -35,6 +37,8 @@ import java.util.concurrent.BlockingQueue;
  * HTML server do podglądu przetworzonych stron z Kafka z numeracją i kolorowaniem wg głębokości.
  */
 public class HTMLKafkaServer {
+
+    private static final Logger log = LoggerFactory.getLogger(HTMLKafkaServer.class);
 
     private final KafkaConsumer<String, String> consumer;
     private final BlockingQueue<String> messageQueue;
@@ -73,8 +77,9 @@ public class HTMLKafkaServer {
         props.put(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG, "TLSv1.2,TLSv1.3");
         // Disable hostname verification for self-signed dev certs; the CA trust anchor is still enforced.
         props.put(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, "");
-        System.out.println("[Kafka consumer] truststore: " + new java.io.File(truststorePath).getAbsolutePath()
-                + " exists=" + new java.io.File(truststorePath).exists());
+        log.debug("[Kafka consumer] truststore: {} exists={}",
+                new java.io.File(truststorePath).getAbsolutePath(),
+                new java.io.File(truststorePath).exists());
 
         consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singletonList(topic));
@@ -84,8 +89,8 @@ public class HTMLKafkaServer {
         Spark.ipAddress("127.0.0.1");
         Spark.port(port);
 
-        System.out.println("[AUTH] MagicBlackSpider UI — credentials: admin / " + apiKey);
-        System.out.println("[AUTH] Open http://127.0.0.1:" + port + "/ in your browser and enter these when prompted.");
+        log.info("[AUTH] MagicBlackSpider UI — credentials: admin / {}", apiKey);
+        log.info("[AUTH] Open http://127.0.0.1:{}/ in your browser and enter these when prompted.", port);
 
         Spark.before((req, res) -> {
             String auth = req.headers("Authorization");
