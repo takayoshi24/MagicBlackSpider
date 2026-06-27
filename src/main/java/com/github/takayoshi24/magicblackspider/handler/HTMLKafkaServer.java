@@ -27,6 +27,7 @@ public class HTMLKafkaServer {
     private volatile boolean running = false;
     private Thread consumerThread;
     private volatile long crawlStartTime = 0;
+    private volatile long crawlEndTime = 0;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
@@ -54,6 +55,7 @@ public class HTMLKafkaServer {
                     url = "https://" + url;
                 }
                 crawlStartTime = System.currentTimeMillis();
+                crawlEndTime = 0;
                 scheduler.add(url, 0);
             }
             res.redirect("/");
@@ -63,12 +65,14 @@ public class HTMLKafkaServer {
         Spark.post("/clear", (req, res) -> {
             messageQueue.clear();
             crawlStartTime = 0;
+            crawlEndTime = 0;
             res.redirect("/");
             return null;
         });
 
         Spark.get("/", (req, res) -> {
             long startTime = crawlStartTime;
+            long endTime = crawlEndTime;
             List<String> snapshot = new ArrayList<>(messageQueue);
 
             // parse messages and count per depth
@@ -196,15 +200,17 @@ public class HTMLKafkaServer {
             html.append("</tbody></table>");
             html.append("<script>");
             html.append("var startMs=").append(startTime).append(";");
+            html.append("var endMs=").append(endTime).append(";");
             html.append("var el=document.getElementById('crawl-timer');");
             html.append("function pad(n){return String(n).padStart(2,'0');}");
             html.append("function tick(){");
             html.append("  if(startMs===0){el.textContent='--:--:--';return;}");
-            html.append("  var elapsed=Math.floor((Date.now()-startMs)/1000);");
+            html.append("  var ref=endMs!==0?endMs:Date.now();");
+            html.append("  var elapsed=Math.floor((ref-startMs)/1000);");
             html.append("  if(elapsed<0)elapsed=0;");
             html.append("  el.textContent=pad(Math.floor(elapsed/3600))+':'+pad(Math.floor((elapsed%3600)/60))+':'+pad(elapsed%60);");
             html.append("}");
-            html.append("tick();setInterval(tick,1000);");
+            html.append("tick();if(endMs===0)setInterval(tick,1000);");
             html.append("</script>");
             html.append("</body></html>");
             return html.toString();
@@ -229,6 +235,10 @@ public class HTMLKafkaServer {
         });
         consumerThread.setDaemon(true);
         consumerThread.start();
+    }
+
+    public void signalCrawlFinished() {
+        crawlEndTime = System.currentTimeMillis();
     }
 
     public void stopServer() {
