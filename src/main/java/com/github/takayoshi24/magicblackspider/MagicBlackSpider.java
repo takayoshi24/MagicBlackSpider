@@ -27,6 +27,9 @@ public class MagicBlackSpider {
     private final PolitenessManager politenessManager;
     private final RobotsTxtChecker robotsChecker;
     private final AtomicInteger processed = new AtomicInteger(0);
+    private final AtomicInteger inFlight = new AtomicInteger(0);
+    private final AtomicInteger failedCount = new AtomicInteger(0);
+    private final AtomicInteger robotsBlockedCount = new AtomicInteger(0);
 
     public MagicBlackSpider(Scheduler scheduler, Fetcher fetcher, PageHandler handler, int threads, long politenessMillis) {
         this(scheduler, fetcher, handler, threads, politenessMillis,
@@ -46,6 +49,9 @@ public class MagicBlackSpider {
 
     public void start(String seedUrl, int maxPages) throws InterruptedException {
         processed.set(0);
+        inFlight.set(0);
+        failedCount.set(0);
+        robotsBlockedCount.set(0);
         ExecutorService executor = Executors.newFixedThreadPool(threads);
 
         // Add seed only when explicitly provided (null means wait for URL from the UI)
@@ -56,11 +62,6 @@ public class MagicBlackSpider {
         // Semaphore limits total submitted tasks to maxPages, preventing overshoot
         // under concurrent processing (issue #11).
         Semaphore pagePermits = new Semaphore(maxPages);
-
-        // Tracks tasks submitted to the executor that haven't finished yet.
-        // When the queue is empty and inFlight==0 no worker can enqueue more URLs,
-        // so the crawl is complete even if maxPages wasn't reached (fix for issue #27).
-        AtomicInteger inFlight = new AtomicInteger(0);
 
         // False until the first URL is dequeued; prevents early exit while waiting
         // for the user to submit a domain via the web UI.
@@ -98,6 +99,7 @@ public class MagicBlackSpider {
 
                 if (!robotsChecker.isAllowed(url, rules, baseUrl)) {
                     logger.info("[ROBOTS] Denied by robots.txt: {}", url);
+                    robotsBlockedCount.incrementAndGet();
                     pagePermits.release();
                     continue;
                 }
@@ -124,7 +126,7 @@ public class MagicBlackSpider {
                 try {
                     // Pobierz stronę
                     Document doc = fetcher.fetch(url);
-                    if (doc == null) return;
+                    if (doc == null) { failedCount.incrementAndGet(); return; }
 
                     // Obsłuż stronę z depth
                     handler.handle(new Page(url, doc), scheduler, depth);
@@ -160,7 +162,8 @@ public class MagicBlackSpider {
     }
 
 
-    public int getProcessedCount() {
-        return processed.get();
-    }
+    public int getProcessedCount() { return processed.get(); }
+    public int getInFlight() { return inFlight.get(); }
+    public int getFailedCount() { return failedCount.get(); }
+    public int getRobotsBlockedCount() { return robotsBlockedCount.get(); }
 }
