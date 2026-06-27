@@ -42,13 +42,18 @@ public class HTMLKafkaServer {
     private volatile long crawlEndTime = 0;
     private volatile String seedUrl = "";
     private final String csrfToken;
+    private final String apiKey;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
         this.scheduler = scheduler;
+        SecureRandom rng = new SecureRandom();
         byte[] tokenBytes = new byte[32];
-        new SecureRandom().nextBytes(tokenBytes);
+        rng.nextBytes(tokenBytes);
         this.csrfToken = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+        byte[] keyBytes = new byte[24];
+        rng.nextBytes(keyBytes);
+        this.apiKey = Base64.getUrlEncoder().withoutPadding().encodeToString(keyBytes);
 
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -62,7 +67,21 @@ public class HTMLKafkaServer {
     }
 
     public void startServer(int port) {
+        Spark.ipAddress("127.0.0.1");
         Spark.port(port);
+
+        System.out.println("[AUTH] MagicBlackSpider UI — credentials: admin / " + apiKey);
+        System.out.println("[AUTH] Open http://127.0.0.1:" + port + "/ in your browser and enter these when prompted.");
+
+        Spark.before((req, res) -> {
+            String auth = req.headers("Authorization");
+            if (auth != null && auth.startsWith("Basic ")) {
+                String decoded = new String(java.util.Base64.getDecoder().decode(auth.substring(6)));
+                if (("admin:" + apiKey).equals(decoded)) return;
+            }
+            res.header("WWW-Authenticate", "Basic realm=\"MagicBlackSpider\"");
+            Spark.halt(401, "Unauthorized");
+        });
 
         Spark.post("/seed", (req, res) -> {
             if (!csrfToken.equals(req.queryParams("_csrf"))) {
