@@ -5,11 +5,15 @@ import com.github.takayoshi24.magicblackspider.handler.HTMLKafkaServer;
 import com.github.takayoshi24.magicblackspider.handler.KafkaPageHandler;
 import com.github.takayoshi24.magicblackspider.handler.KafkaProducerWorker;
 import com.github.takayoshi24.magicblackspider.handler.PageHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public class Main {
+
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws InterruptedException {
         // Parametry startowe
@@ -61,12 +65,12 @@ public class Main {
             spider.start(currentSeed, maxPages);
             htmlServer.signalCrawlFinished();
 
-            System.out.println("=== KONIEC CRAWL’A ===");
-            System.out.println("Przetworzone: " + spider.getProcessedCount());
-            System.out.println("Odwiedzone: " + scheduler.visitedSize());
-            System.out.println("Nieprzetworzone URL: " + scheduler.queueSize());
-            System.out.println("Błędne / odrzucone: " + scheduler.getRejectedCount());
-            System.out.println("Oczekiwanie na kolejne zlecenie crawl’a przez UI...");
+            logger.info("=== KONIEC CRAWL’A ===");
+            logger.info("Przetworzone: {}", spider.getProcessedCount());
+            logger.info("Odwiedzone: {}", scheduler.visitedSize());
+            logger.info("Nieprzetworzone URL: {}", scheduler.queueSize());
+            logger.info("Błędne / odrzucone: {}", scheduler.getRejectedCount());
+            logger.info("Oczekiwanie na kolejne zlecenie crawl’a przez UI...");
 
             scheduler.reset();
             currentSeed = null; // subsequent crawls start from a URL submitted via the web UI
@@ -81,14 +85,14 @@ public class Main {
         try {
             int value = Integer.parseInt(args[index]);
             if (value <= 0) {
-                System.err.println("Error: " + name + " must be > 0 (got " + value + ")");
-                System.err.println(USAGE);
+                logger.error("Error: {} must be > 0 (got {})", name, value);
+                logger.error(USAGE);
                 System.exit(1);
             }
             return value;
         } catch (NumberFormatException e) {
-            System.err.println("Error: " + name + " must be an integer (got \"" + args[index] + "\")");
-            System.err.println(USAGE);
+            logger.error("Error: {} must be an integer (got \"{}\")", name, args[index]);
+            logger.error(USAGE);
             System.exit(1);
             return defaultValue; // unreachable, satisfies compiler
         }
@@ -99,14 +103,14 @@ public class Main {
         try {
             int port = Integer.parseInt(args[index]);
             if (port < 1 || port > 65535) {
-                System.err.println("Error: " + name + " must be between 1 and 65535 (got " + port + ")");
-                System.err.println(USAGE);
+                logger.error("Error: {} must be between 1 and 65535 (got {})", name, port);
+                logger.error(USAGE);
                 System.exit(1);
             }
             return port;
         } catch (NumberFormatException e) {
-            System.err.println("Error: " + name + " must be an integer (got \"" + args[index] + "\")");
-            System.err.println(USAGE);
+            logger.error("Error: {} must be an integer (got \"{}\")", name, args[index]);
+            logger.error(USAGE);
             System.exit(1);
             return defaultValue; // unreachable, satisfies compiler
         }
