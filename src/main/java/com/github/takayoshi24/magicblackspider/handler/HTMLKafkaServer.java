@@ -5,9 +5,19 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import spark.Spark;
 
+import java.io.ByteArrayOutputStream;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +38,7 @@ public class HTMLKafkaServer {
     private Thread consumerThread;
     private volatile long crawlStartTime = 0;
     private volatile long crawlEndTime = 0;
+    private volatile String seedUrl = "";
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
@@ -56,6 +67,7 @@ public class HTMLKafkaServer {
                 }
                 crawlStartTime = System.currentTimeMillis();
                 crawlEndTime = 0;
+                seedUrl = url;
                 scheduler.add(url, 0);
             }
             res.redirect("/");
@@ -66,7 +78,42 @@ public class HTMLKafkaServer {
             messageQueue.clear();
             crawlStartTime = 0;
             crawlEndTime = 0;
+            seedUrl = "";
             res.redirect("/");
+            return null;
+        });
+
+        Spark.post("/download", (req, res) -> {
+            List<String> snapshot = new ArrayList<>(messageQueue);
+            Map<Integer, Integer> depthCounts = new TreeMap<>();
+            List<int[]> depthList = new ArrayList<>();
+            List<String> urlList = new ArrayList<>();
+            for (String msg : snapshot) {
+                String[] parts = msg.split("\\|", 2);
+                int depth = 0;
+                String url = msg;
+                if (parts.length == 2) {
+                    try { depth = Integer.parseInt(parts[0]); url = parts[1]; }
+                    catch (NumberFormatException ignored) {}
+                }
+                depthList.add(new int[]{depth});
+                urlList.add(url);
+                depthCounts.merge(depth, 1, Integer::sum);
+            }
+
+            byte[] docx = generateDocx(urlList, depthList, depthCounts, crawlStartTime, crawlEndTime, seedUrl);
+
+            res.type("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            res.header("Content-Disposition", "attachment; filename=\"crawl-report.docx\"");
+            res.raw().setContentLength(docx.length);
+            res.raw().getOutputStream().write(docx);
+            res.raw().getOutputStream().flush();
+
+            messageQueue.clear();
+            crawlStartTime = 0;
+            crawlEndTime = 0;
+            seedUrl = "";
+
             return null;
         });
 
@@ -118,6 +165,8 @@ public class HTMLKafkaServer {
             html.append("#stats .timer{font-size:20px;font-weight:bold;color:#7eb8ff;letter-spacing:3px;font-variant-numeric:tabular-nums}");
             html.append(".btn-clear{background:#2a0a0a;border:1px solid #7b2222;border-radius:6px;padding:8px 18px;color:#e07070;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap}");
             html.append(".btn-clear:hover{background:#3a0e0e;border-color:#e07070}");
+            html.append(".btn-download{background:#0a2a1a;border:1px solid #226644;border-radius:6px;padding:8px 18px;color:#6fcf97;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap;width:100%;margin-bottom:12px}");
+            html.append(".btn-download:hover{background:#0e3a22;border-color:#6fcf97}");
             html.append("table{width:100%;border-collapse:collapse}");
             html.append("thead th{text-align:left;padding:8px 12px;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #2a2a3e;font-weight:normal}");
             html.append("tbody tr{border-bottom:1px solid #16161f}");
@@ -136,6 +185,9 @@ public class HTMLKafkaServer {
 
             // stats panel
             html.append("<div id='stats'>");
+            html.append("<form method='POST' action='/download'>");
+            html.append("<button type='submit' class='btn-download'>&#x2B07; Download Report &amp; Clear</button>");
+            html.append("</form>");
             html.append("<h3>Crawler Stats</h3>");
             html.append("<div class='timer-label'>Crawl Time</div>");
             html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
@@ -261,5 +313,84 @@ public class HTMLKafkaServer {
 
     private static String escapeHtml(String text) {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#x27;");
+    }
+
+    private byte[] generateDocx(List<String> urlList, List<int[]> depthList,
+                                  Map<Integer, Integer> depthCounts,
+                                  long startTime, long endTime, String seed) throws Exception {
+        try (XWPFDocument doc = new XWPFDocument();
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+
+            XWPFParagraph title = doc.createParagraph();
+            title.setAlignment(ParagraphAlignment.CENTER);
+            XWPFRun tr = title.createRun();
+            tr.setText("MagicBlackSpider Crawl Report");
+            tr.setBold(true);
+            tr.setFontSize(18);
+
+            doc.createParagraph().createRun().setText("");
+
+            addInfoLine(doc, "Domain", seed.isEmpty() ? "N/A" : seed);
+            addInfoLine(doc, "Exported", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+
+            String timeStr;
+            if (startTime > 0) {
+                long ref = endTime > 0 ? endTime : System.currentTimeMillis();
+                long secs = (ref - startTime) / 1000;
+                timeStr = String.format("%02d:%02d:%02d", secs / 3600, (secs % 3600) / 60, secs % 60);
+            } else {
+                timeStr = "--:--:--";
+            }
+            addInfoLine(doc, "Crawl Duration", timeStr);
+            addInfoLine(doc, "Total Pages", String.valueOf(urlList.size()));
+
+            doc.createParagraph().createRun().setText("");
+
+            XWPFRun depthHeader = doc.createParagraph().createRun();
+            depthHeader.setText("Pages per Depth");
+            depthHeader.setBold(true);
+            depthHeader.setFontSize(12);
+
+            for (Map.Entry<Integer, Integer> e : depthCounts.entrySet()) {
+                addInfoLine(doc, "  Depth " + e.getKey(), e.getValue() + " pages");
+            }
+
+            doc.createParagraph().createRun().setText("");
+
+            XWPFRun urlHeader = doc.createParagraph().createRun();
+            urlHeader.setText("Crawled URLs");
+            urlHeader.setBold(true);
+            urlHeader.setFontSize(12);
+
+            if (!urlList.isEmpty()) {
+                XWPFTable table = doc.createTable(urlList.size() + 1, 3);
+                setCell(table.getRow(0).getCell(0), "#", true);
+                setCell(table.getRow(0).getCell(1), "Depth", true);
+                setCell(table.getRow(0).getCell(2), "URL", true);
+                for (int i = 0; i < urlList.size(); i++) {
+                    XWPFTableRow row = table.getRow(i + 1);
+                    setCell(row.getCell(0), String.format("%03d", i + 1), false);
+                    setCell(row.getCell(1), "D" + depthList.get(i)[0], false);
+                    setCell(row.getCell(2), urlList.get(i), false);
+                }
+            }
+
+            doc.write(out);
+            return out.toByteArray();
+        }
+    }
+
+    private static void addInfoLine(XWPFDocument doc, String label, String value) {
+        XWPFParagraph p = doc.createParagraph();
+        XWPFRun labelRun = p.createRun();
+        labelRun.setText(label + ": ");
+        labelRun.setBold(true);
+        p.createRun().setText(value);
+    }
+
+    private static void setCell(XWPFTableCell cell, String text, boolean bold) {
+        XWPFRun r = cell.getParagraphs().get(0).createRun();
+        r.setText(text);
+        r.setBold(bold);
     }
 }
