@@ -84,6 +84,14 @@ public class HTMLKafkaServer {
             Spark.halt(401, "Unauthorized");
         });
 
+        Spark.after((req, res) -> {
+            res.header("Content-Security-Policy",
+                    "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; object-src 'none'");
+            res.header("X-Frame-Options", "DENY");
+            res.header("X-Content-Type-Options", "nosniff");
+            res.header("Referrer-Policy", "no-referrer");
+        });
+
         Spark.post("/seed", (req, res) -> {
             if (!csrfToken.equals(req.queryParams("_csrf"))) {
                 res.status(403);
@@ -186,8 +194,6 @@ public class HTMLKafkaServer {
                 urlList.add(url);
                 depthCounts.merge(depth, 1, Integer::sum);
             }
-
-            res.header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; object-src 'none'");
 
             StringBuilder html = new StringBuilder("<!DOCTYPE html><html><head>");
             html.append("<meta charset='UTF-8'>");
