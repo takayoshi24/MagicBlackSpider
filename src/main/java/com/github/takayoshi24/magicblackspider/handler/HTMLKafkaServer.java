@@ -25,6 +25,7 @@ public class HTMLKafkaServer {
     private final BlockingQueue<String> messageQueue;
     private final Scheduler scheduler;
     private volatile boolean running = false;
+    private Thread consumerThread;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
@@ -179,14 +180,19 @@ public class HTMLKafkaServer {
 
         // w tle pobieranie z Kafki i dodawanie do kolejki
         running = true;
-        Thread consumerThread = new Thread(() -> {
-            while (running) {
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
-                for (ConsumerRecord<String, String> record : records) {
-                    while (!messageQueue.offer(record.value())) {
-                        messageQueue.poll();
+        consumerThread = new Thread(() -> {
+            try {
+                while (running) {
+                    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+                    for (ConsumerRecord<String, String> record : records) {
+                        while (!messageQueue.offer(record.value())) {
+                            messageQueue.poll();
+                        }
                     }
                 }
+            } finally {
+                // KafkaConsumer is not thread-safe; close must happen on the same thread that calls poll()
+                consumer.close();
             }
         });
         consumerThread.setDaemon(true);
@@ -195,7 +201,13 @@ public class HTMLKafkaServer {
 
     public void stopServer() {
         running = false;
-        consumer.close();
+        if (consumerThread != null) {
+            try {
+                consumerThread.join(5000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         Spark.stop();
     }
 
