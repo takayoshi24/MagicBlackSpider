@@ -8,7 +8,7 @@ import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URL;
+import java.net.URI;
 import java.util.concurrent.BlockingQueue;
 
 public class KafkaPageHandler implements PageHandler {
@@ -39,7 +39,7 @@ public class KafkaPageHandler implements PageHandler {
         Elements links = doc.select("a[href]");
         String baseDomain = "";
         try {
-            baseDomain = new URL(url).getHost();
+            baseDomain = URI.create(url).getHost();
         } catch (Exception e) {
             logger.warn("Failed to extract domain from URL: {}", url, e);
         }
@@ -50,10 +50,10 @@ public class KafkaPageHandler implements PageHandler {
             if (href.isEmpty() || href.contains("#")) continue;
 
             try {
-                URL newUrl = new URL(href);
-                String protocol = newUrl.getProtocol();
-                if (!protocol.equals("http") && !protocol.equals("https")) continue;
-                if (!newUrl.getHost().equalsIgnoreCase(baseDomain)) continue;
+                URI newUri = URI.create(href);
+                String scheme = newUri.getScheme();
+                if (!"http".equals(scheme) && !"https".equals(scheme)) continue;
+                if (!newUri.getHost().equalsIgnoreCase(baseDomain)) continue;
                 if (depth + 1 <= maxDepth && scheduler.add(href, depth + 1)) {
                     newLinks++;
                 }
