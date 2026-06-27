@@ -46,6 +46,7 @@ public class Main {
 
         // Crawler
         MagicBlackSpider spider = new MagicBlackSpider(scheduler, fetcher, handler, 4, 500);
+        htmlServer.setSpider(spider);
 
         // Clean up Kafka and web server on Ctrl+C / SIGTERM
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

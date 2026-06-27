@@ -35,6 +35,10 @@ import java.util.Properties;
 import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import com.github.takayoshi24.magicblackspider.MagicBlackSpider;
 
 /**
  * HTML server do podglądu przetworzonych stron z Kafka z numeracją i kolorowaniem wg głębokości.
@@ -55,6 +59,8 @@ public class HTMLKafkaServer {
     private final String csrfToken;
     private final String apiKey;
     private final CopyOnWriteArrayList<SseClient> sseClients = new CopyOnWriteArrayList<>();
+    private volatile MagicBlackSpider spider;
+    private ScheduledExecutorService statsTimer;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
@@ -212,6 +218,7 @@ public class HTMLKafkaServer {
             // does not undo the startSpiders() triggered by applyState().
             client.sendEvent("clear_table", "{}");
             client.sendEvent("state", buildStateJson());
+            client.sendEvent("stats", buildStatsJson());
             for (String msg : new ArrayList<>(messageQueue)) {
                 client.sendEvent("url", msg);
             }
@@ -263,6 +270,13 @@ public class HTMLKafkaServer {
             html.append("a.url-link:hover .path{color:#888}");
             html.append(".host-row{display:flex;align-items:center;flex-wrap:wrap;gap:4px}");
             html.append(".spider{position:fixed;font-size:24px;pointer-events:none;user-select:none;z-index:9999;transition:opacity 0.6s ease}");
+            html.append("#stats .divider{border:none;border-top:1px solid #2a2a3e;margin:10px 0}");
+            html.append("#stats .live-row{display:flex;justify-content:space-between;align-items:center;margin:4px 0;font-size:12px}");
+            html.append("#stats .live-label{color:#666}");
+            html.append("#stats .live-val{font-weight:bold;color:#fff}");
+            html.append("#stats .live-val.warn{color:#e07070}");
+            html.append("#stats .live-val.accent{color:#7eb8ff}");
+            html.append("#stats .rate-val{font-size:15px;font-weight:bold;color:#6fcf97;letter-spacing:1px}");
             html.append("</style></head><body>");
 
             html.append("<div id='stats'>");
@@ -275,6 +289,8 @@ public class HTMLKafkaServer {
             html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
             html.append("<div class='total' id='total-count'>0<span>pages crawled</span></div>");
             html.append("<div id='depth-rows'></div>");
+            html.append("<hr class='divider' id='live-divider' style='display:none'>");
+            html.append("<div id='live-stats-rows'></div>");
             html.append("</div>");
 
             html.append("<div id='seed-panel'>");
@@ -298,6 +314,8 @@ public class HTMLKafkaServer {
             html.append("<script>");
             html.append("var sseToken='").append(csrfToken).append("';");
             html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null;");
+            html.append("var liveQueue=0,liveInFlight=0,liveRejected=0,liveFailed=0,liveRobotsBlocked=0,liveProcessed=0;");
+            html.append("var uniqueHosts=new Set();");
             html.append("var spidersRunning=false,spiders=[];");
             html.append("function pad(n){return String(n).padStart(2,'0');}");
             html.append("function depthColor(d){var hue=(d*137.508)%360;return'hsl('+Math.round(hue)+',65%,58%)';}");
@@ -321,6 +339,24 @@ public class HTMLKafkaServer {
             html.append("});");
             html.append("document.getElementById('depth-rows').innerHTML=h;");
             html.append("}");
+            html.append("function updateLiveStats(){");
+            html.append("var divider=document.getElementById('live-divider');");
+            html.append("var rows=document.getElementById('live-stats-rows');");
+            html.append("if(startMs===0){divider.style.display='none';rows.innerHTML='';return;}");
+            html.append("divider.style.display='';");
+            html.append("var ref=endMs!==0?endMs:Date.now();");
+            html.append("var elapsed=Math.max(1,Math.floor((ref-startMs)/1000));");
+            html.append("var rate=(liveProcessed/elapsed).toFixed(1);");
+            html.append("var h='';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Queue</span><span class=\"live-val accent\">'+liveQueue+'</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">In-flight</span><span class=\"live-val accent\">'+liveInFlight+'/4</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Unique hosts</span><span class=\"live-val\">'+uniqueHosts.size+'</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Rejected dupes</span><span class=\"live-val warn\">'+liveRejected+'</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Failed fetches</span><span class=\"live-val warn\">'+liveFailed+'</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Robots blocked</span><span class=\"live-val warn\">'+liveRobotsBlocked+'</span></div>';");
+            html.append("h+='<div class=\"live-row\" style=\"margin-top:8px\"><span class=\"live-label\">Crawl rate</span><span class=\"rate-val\">'+rate+'/s</span></div>';");
+            html.append("rows.innerHTML=h;");
+            html.append("}");
             html.append("function addRow(msg){");
             html.append("var idx=msg.indexOf('|');");
             html.append("var depth=0,url=msg;");
@@ -329,6 +365,7 @@ public class HTMLKafkaServer {
             html.append("rowCount++;");
             html.append("var scheme='',host=url,path='';");
             html.append("try{var u=new URL(url);scheme=u.protocol.replace(':','');host=u.hostname;path=u.pathname+u.search;if(path==='/')path='';}catch(e){}");
+            html.append("if(host)uniqueHosts.add(host);");
             html.append("var color=depthColor(depth);");
             html.append("var num=String(rowCount).padStart(3,'0');");
             html.append("var href=(url.startsWith('http://')||url.startsWith('https://'))?escHtml(url):'#';");
@@ -351,6 +388,7 @@ public class HTMLKafkaServer {
             html.append("tick();");
             html.append("if(startMs>0&&endMs===0){timerInterval=setInterval(tick,1000);startSpiders();}");
             html.append("else{stopSpiders();}");
+            html.append("updateLiveStats();");
             html.append("}");
             html.append("function startSpiders(){");
             html.append("if(spidersRunning)return;spidersRunning=true;spiders=[];");
@@ -396,14 +434,34 @@ public class HTMLKafkaServer {
             html.append("var es=new EventSource('/events?token='+encodeURIComponent(sseToken));");
             html.append("es.addEventListener('state',function(e){applyState(JSON.parse(e.data));});");
             html.append("es.addEventListener('url',function(e){addRow(e.data);});");
+            html.append("es.addEventListener('stats',function(e){");
+            html.append("var d=JSON.parse(e.data);");
+            html.append("liveQueue=d.queue;liveInFlight=d.inFlight;liveRejected=d.rejected;");
+            html.append("liveFailed=d.failed;liveRobotsBlocked=d.robotsBlocked;liveProcessed=d.processed;");
+            html.append("updateLiveStats();");
+            html.append("});");
             html.append("es.addEventListener('clear_table',function(e){");
             html.append("document.getElementById('url-tbody').innerHTML='';");
             html.append("rowCount=0;depthCounts={};updateStats();stopSpiders();");
+            html.append("liveQueue=0;liveInFlight=0;liveRejected=0;liveFailed=0;liveRobotsBlocked=0;liveProcessed=0;");
+            html.append("uniqueHosts=new Set();updateLiveStats();");
             html.append("});");
             html.append("</script>");
             html.append("</body></html>");
             ctx.html(html.toString());
         });
+
+        // Periodic stats broadcast — every 1s while a crawl is active
+        statsTimer = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "stats-broadcaster");
+            t.setDaemon(true);
+            return t;
+        });
+        statsTimer.scheduleAtFixedRate(() -> {
+            if (crawlStartTime > 0 && crawlEndTime == 0) {
+                broadcastEvent("stats", buildStatsJson());
+            }
+        }, 0, 1, TimeUnit.SECONDS);
 
         // Background thread: consume from Kafka and push to the queue and live SSE clients
         running = true;
@@ -428,6 +486,10 @@ public class HTMLKafkaServer {
         consumerThread.start();
     }
 
+    public void setSpider(MagicBlackSpider spider) {
+        this.spider = spider;
+    }
+
     public void signalCrawlFinished() {
         crawlEndTime = System.currentTimeMillis();
         broadcastEvent("state", buildStateJson());
@@ -435,6 +497,9 @@ public class HTMLKafkaServer {
 
     public void stopServer() {
         running = false;
+        if (statsTimer != null) {
+            statsTimer.shutdownNow();
+        }
         if (consumerThread != null) {
             try {
                 consumerThread.join(5000);
@@ -445,6 +510,18 @@ public class HTMLKafkaServer {
         if (app != null) {
             app.stop();
         }
+    }
+
+    private String buildStatsJson() {
+        int queue = scheduler.queueSize();
+        int rejected = scheduler.getRejectedCount();
+        int inFlight = spider != null ? spider.getInFlight() : 0;
+        int failed = spider != null ? spider.getFailedCount() : 0;
+        int robotsBlocked = spider != null ? spider.getRobotsBlockedCount() : 0;
+        int processed = spider != null ? spider.getProcessedCount() : 0;
+        return "{\"queue\":" + queue + ",\"inFlight\":" + inFlight
+                + ",\"rejected\":" + rejected + ",\"failed\":" + failed
+                + ",\"robotsBlocked\":" + robotsBlocked + ",\"processed\":" + processed + "}";
     }
 
     private String buildStateJson() {
