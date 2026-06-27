@@ -24,15 +24,21 @@ public class SimpleFetcher implements Fetcher {
     private final int timeoutMillis;
     private final int maxRetries;
     private final String userAgent;
+    private final long retryDelayMillis;
 
     public SimpleFetcher(int timeoutMillis) {
-        this(timeoutMillis, 3, "MagicBlackSpider");
+        this(timeoutMillis, 3, "MagicBlackSpider", 1000L);
     }
 
     public SimpleFetcher(int timeoutMillis, int maxRetries, String userAgent) {
+        this(timeoutMillis, maxRetries, userAgent, 1000L);
+    }
+
+    public SimpleFetcher(int timeoutMillis, int maxRetries, String userAgent, long retryDelayMillis) {
         this.timeoutMillis = timeoutMillis;
         this.maxRetries = maxRetries;
         this.userAgent = userAgent;
+        this.retryDelayMillis = retryDelayMillis;
     }
 
     @Override
@@ -54,11 +60,13 @@ public class SimpleFetcher implements Fetcher {
             } catch (IOException e) {
                 attempt++;
                 logger.warn("Błąd pobierania URL {} ({}), próba {}/{}", url, e.getMessage(), attempt, maxRetries);
-                try {
-                    TimeUnit.SECONDS.sleep(1); // krótkie opóźnienie między próbami
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted during fetch retry", ex);
+                if (attempt < maxRetries && retryDelayMillis > 0) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(retryDelayMillis);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted during fetch retry", ex);
+                    }
                 }
             }
         }
