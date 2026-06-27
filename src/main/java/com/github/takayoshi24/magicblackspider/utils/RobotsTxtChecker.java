@@ -53,9 +53,10 @@ public class RobotsTxtChecker {
 
     private RobotsTxtRules downloadAndParse(String baseUrl) {
         RobotsTxtRules rules = new RobotsTxtRules();
+        HttpURLConnection conn = null;
         try {
             URL url = new URL(baseUrl + "/robots.txt");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestProperty("User-Agent", userAgent);
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
@@ -99,6 +100,10 @@ public class RobotsTxtChecker {
             }
         } catch (Exception e) {
             logger.warn("Błąd pobierania robots.txt dla {}: {}", baseUrl, e.getMessage());
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
         rules.lastFetched = Instant.now();
         return rules;
