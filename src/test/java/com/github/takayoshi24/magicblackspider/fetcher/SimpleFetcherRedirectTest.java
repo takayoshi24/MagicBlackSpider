@@ -2,6 +2,8 @@ package com.github.takayoshi24.magicblackspider.fetcher;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimpleFetcherRedirectTest {
@@ -35,5 +37,15 @@ class SimpleFetcherRedirectTest {
     void publicUrl_isNotBlocked() {
         assertFalse(SimpleFetcher.isBlockedUrl("http://example.com/"));
         assertFalse(SimpleFetcher.isBlockedUrl("https://www.google.com/"));
+    }
+
+    @Test
+    void fetch_throwsImmediately_forPrivateIpInitialUrl() {
+        SimpleFetcher fetcher = new SimpleFetcher(5000, 1, "test", 0L);
+        IOException ex1 = assertThrows(IOException.class, () -> fetcher.fetch("http://127.0.0.1/secret"));
+        assertTrue(ex1.getMessage().contains("Blocked"), "expected 'Blocked' in message, got: " + ex1.getMessage());
+
+        IOException ex2 = assertThrows(IOException.class, () -> fetcher.fetch("http://169.254.169.254/latest/meta-data/"));
+        assertTrue(ex2.getMessage().contains("Blocked"), "expected 'Blocked' in message, got: " + ex2.getMessage());
     }
 }

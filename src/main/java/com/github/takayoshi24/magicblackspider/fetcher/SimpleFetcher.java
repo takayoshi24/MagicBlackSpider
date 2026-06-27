@@ -46,6 +46,9 @@ public class SimpleFetcher implements Fetcher {
 
     @Override
     public Document fetch(String url) throws IOException {
+        if (isBlockedUrl(url)) {
+            throw new IOException("Blocked URL (private/loopback address): " + url);
+        }
         int attempt = 0;
         while (attempt < maxRetries) {
             try {
@@ -106,7 +109,7 @@ public class SimpleFetcher implements Fetcher {
      * Returns true if the URL's resolved host is a loopback, link-local, or private (RFC-1918) address.
      * Treats unresolvable or malformed URLs as blocked.
      */
-    static boolean isBlockedUrl(String url) {
+    public static boolean isBlockedUrl(String url) {
         try {
             String host = new URI(url).getHost();
             if (host == null) return true;
