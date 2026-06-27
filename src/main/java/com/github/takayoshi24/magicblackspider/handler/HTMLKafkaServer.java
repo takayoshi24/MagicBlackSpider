@@ -1,6 +1,7 @@
 package com.github.takayoshi24.magicblackspider.handler;
 
 import com.github.takayoshi24.magicblackspider.Scheduler;
+import com.github.takayoshi24.magicblackspider.fetcher.SimpleFetcher;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -93,6 +94,15 @@ public class HTMLKafkaServer {
                 url = url.trim();
                 if (!url.startsWith("http://") && !url.startsWith("https://")) {
                     url = "https://" + url;
+                }
+                if (SimpleFetcher.isBlockedUrl(url)) {
+                    res.status(400);
+                    return "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Blocked</title>"
+                            + "<style>body{background:#0f0f1a;color:#e07070;font-family:'Courier New',monospace;"
+                            + "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
+                            + "div{text-align:center}a{color:#7eb8ff}</style></head><body>"
+                            + "<div><h2>Blocked</h2><p>The URL resolves to a private or loopback address "
+                            + "and cannot be crawled.</p><p><a href='/'>&#8592; Back</a></p></div></body></html>";
                 }
                 crawlStartTime = System.currentTimeMillis();
                 crawlEndTime = 0;
