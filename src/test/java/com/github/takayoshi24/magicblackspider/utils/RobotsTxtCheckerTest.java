@@ -19,16 +19,16 @@ class RobotsTxtCheckerTest {
     // --- Fix 1: port included in base URL ---
 
     @Test
-    void isAllowed_standardPort_noPortInBaseUrl() throws Exception {
+    void isAllowed_standardPort_noPortInBaseUrl() {
         // getAuthority() on http://example.com/page returns "example.com" (no port suffix for standard ports)
-        java.net.URL u = new java.net.URL("http://example.com/page");
+        java.net.URI u = java.net.URI.create("http://example.com/page");
         assertEquals("example.com", u.getAuthority());
     }
 
     @Test
-    void isAllowed_nonStandardPort_portIncludedInBaseUrl() throws Exception {
+    void isAllowed_nonStandardPort_portIncludedInBaseUrl() {
         // getAuthority() on http://example.com:8080/page returns "example.com:8080"
-        java.net.URL u = new java.net.URL("http://example.com:8080/page");
+        java.net.URI u = java.net.URI.create("http://example.com:8080/page");
         assertEquals("example.com:8080", u.getAuthority());
     }
 
@@ -157,7 +157,7 @@ class RobotsTxtCheckerTest {
     @Test
     void isAllowed_malformedUrl_returnsDenied() {
         RobotsTxtChecker.RobotsTxtRules rules = new RobotsTxtChecker.RobotsTxtRules();
-        // A URL that java.net.URL cannot parse will throw in isAllowed(); it must return false.
+        // A URL that java.net.URI cannot parse will throw in isAllowed(); it must return false.
         assertFalse(checker.isAllowed("not a valid url ://:::", rules, "http://example.com"),
                 "Malformed URL must be denied, not allowed");
     }

@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
@@ -56,8 +56,7 @@ public class RobotsTxtChecker {
         RobotsTxtRules rules = new RobotsTxtRules();
         HttpURLConnection conn = null;
         try {
-            URL url = new URL(baseUrl + "/robots.txt");
-            conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) URI.create(baseUrl + "/robots.txt").toURL().openConnection();
             conn.setRequestProperty("User-Agent", userAgent);
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
@@ -121,8 +120,8 @@ public class RobotsTxtChecker {
      */
     public boolean isAllowed(String url) {
         try {
-            URL u = new URL(url);
-            String baseUrl = u.getProtocol() + "://" + u.getAuthority();
+            URI u = URI.create(url);
+            String baseUrl = u.getScheme() + "://" + u.getAuthority();
             RobotsTxtRules rules = fetchRules(baseUrl);
             return isAllowed(url, rules, baseUrl);
         } catch (Exception e) {
@@ -136,7 +135,7 @@ public class RobotsTxtChecker {
      */
     public boolean isAllowed(String url, RobotsTxtRules rules, String baseUrl) {
         try {
-            String path = new URL(url).getPath();
+            String path = URI.create(url).getPath();
             // Most specific (longest) matching rule wins; ties go to Allow
             String bestAllow = rules.allows.stream().filter(path::startsWith).findFirst().orElse(null);
             String bestDisallow = rules.disallows.stream().filter(path::startsWith).findFirst().orElse(null);

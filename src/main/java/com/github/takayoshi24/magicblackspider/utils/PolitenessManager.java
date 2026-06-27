@@ -49,8 +49,8 @@ public class PolitenessManager {
         }
     }
 
-    private String extractHost(String url) throws Exception {
-        return new java.net.URL(url).getHost();
+    private String extractHost(String url) {
+        return java.net.URI.create(url).getHost();
     }
 
     /**
