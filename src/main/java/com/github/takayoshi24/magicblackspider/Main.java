@@ -13,7 +13,7 @@ public class Main {
 
     public static void main(String[] args) throws InterruptedException {
         // Parametry startowe
-        String seed = args.length > 0 ? args[0] : "http://books.toscrape.com";
+        String seed = args.length > 0 ? args[0] : null;
         int maxPages = args.length > 1 ? Integer.parseInt(args[1]) : 1200;
         String kafkaServers = args.length > 2 ? args[2] : "localhost:9092";
         String kafkaTopic = args.length > 3 ? args[3] : "pages";

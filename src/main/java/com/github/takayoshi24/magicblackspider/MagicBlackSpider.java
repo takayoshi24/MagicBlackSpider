@@ -45,8 +45,10 @@ public class MagicBlackSpider {
     }
 
     public void start(String seedUrl, int maxPages) throws InterruptedException {
-        // Dodaj URL startowy z depth = 0
-        scheduler.add(seedUrl, 0);
+        // Add seed only when explicitly provided (null means wait for URL from the UI)
+        if (seedUrl != null && !seedUrl.isBlank()) {
+            scheduler.add(seedUrl, 0);
+        }
 
         // Semaphore limits total submitted tasks to maxPages, preventing overshoot
         // under concurrent processing (issue #11).
@@ -57,17 +59,23 @@ public class MagicBlackSpider {
         // so the crawl is complete even if maxPages wasn't reached (fix for issue #27).
         AtomicInteger inFlight = new AtomicInteger(0);
 
+        // False until the first URL is dequeued; prevents early exit while waiting
+        // for the user to submit a domain via the web UI.
+        boolean everReceivedUrl = seedUrl != null && !seedUrl.isBlank();
+
         // Główna pętla: pobieraj URL-e i submituj do executor
         while (pagePermits.tryAcquire(500, TimeUnit.MILLISECONDS)) {
             Scheduler.UrlWithDepth urlWithDepth = scheduler.next(500, TimeUnit.MILLISECONDS);
 
             if (urlWithDepth == null) {
                 pagePermits.release(); // no URL available yet, give permit back
-                if (inFlight.get() == 0) {
+                if (everReceivedUrl && inFlight.get() == 0) {
                     break; // queue empty and no worker can add more URLs — site exhausted
                 }
                 continue;
             }
+
+            everReceivedUrl = true;
 
             // Jeśli poison pill → zakończ pętlę
             if (urlWithDepth == Scheduler.POISON_PILL) {
