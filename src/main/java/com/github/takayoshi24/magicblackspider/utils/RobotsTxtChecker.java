@@ -27,6 +27,7 @@ public class RobotsTxtChecker {
     private static final Logger logger = LoggerFactory.getLogger(RobotsTxtChecker.class);
 
     static final Duration CACHE_TTL = Duration.ofMinutes(30);
+    static final long MAX_CRAWL_DELAY_MILLIS = 60_000L;
 
     private final Map<String, RobotsTxtRules> cache = new ConcurrentHashMap<>();
     private final String userAgent;
@@ -90,7 +91,13 @@ public class RobotsTxtChecker {
                             }
                         } else if (line.toLowerCase().startsWith("crawl-delay:")) {
                             try {
-                                rules.crawlDelayMillis = (long)(Double.parseDouble(line.split(":", 2)[1].trim()) * 1000);
+                                long parsed = (long)(Double.parseDouble(line.split(":", 2)[1].trim()) * 1000);
+                                if (parsed > MAX_CRAWL_DELAY_MILLIS) {
+                                    logger.warn("Crawl-Delay {}ms from {} exceeds cap of {}ms; clamping",
+                                            parsed, baseUrl, MAX_CRAWL_DELAY_MILLIS);
+                                    parsed = MAX_CRAWL_DELAY_MILLIS;
+                                }
+                                rules.crawlDelayMillis = parsed;
                             } catch (NumberFormatException e) {
                                 logger.warn("Niepoprawny crawl-delay w robots.txt {}: {}", baseUrl, line);
                             }
