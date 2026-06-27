@@ -15,10 +15,12 @@ import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import spark.Spark;
 
 import java.io.ByteArrayOutputStream;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -39,10 +41,14 @@ public class HTMLKafkaServer {
     private volatile long crawlStartTime = 0;
     private volatile long crawlEndTime = 0;
     private volatile String seedUrl = "";
+    private final String csrfToken;
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
         this.scheduler = scheduler;
+        byte[] tokenBytes = new byte[32];
+        new SecureRandom().nextBytes(tokenBytes);
+        this.csrfToken = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
 
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -59,6 +65,10 @@ public class HTMLKafkaServer {
         Spark.port(port);
 
         Spark.post("/seed", (req, res) -> {
+            if (!csrfToken.equals(req.queryParams("_csrf"))) {
+                res.status(403);
+                return "Forbidden";
+            }
             String url = req.queryParams("url");
             if (url != null && !url.isBlank()) {
                 url = url.trim();
@@ -75,6 +85,10 @@ public class HTMLKafkaServer {
         });
 
         Spark.post("/clear", (req, res) -> {
+            if (!csrfToken.equals(req.queryParams("_csrf"))) {
+                res.status(403);
+                return "Forbidden";
+            }
             messageQueue.clear();
             crawlStartTime = 0;
             crawlEndTime = 0;
@@ -84,6 +98,10 @@ public class HTMLKafkaServer {
         });
 
         Spark.post("/download", (req, res) -> {
+            if (!csrfToken.equals(req.queryParams("_csrf"))) {
+                res.status(403);
+                return "Forbidden";
+            }
             List<String> snapshot = new ArrayList<>(messageQueue);
             Map<Integer, Integer> depthCounts = new TreeMap<>();
             List<int[]> depthList = new ArrayList<>();
@@ -186,8 +204,10 @@ public class HTMLKafkaServer {
             html.append("</style></head><body>");
 
             // stats panel
+            String csrfField = "<input type='hidden' name='_csrf' value='" + csrfToken + "'/>";
             html.append("<div id='stats'>");
             html.append("<form method='POST' action='/download'>");
+            html.append(csrfField);
             html.append("<button type='submit' class='btn-download'>&#x2B07; Download Report &amp; Clear</button>");
             html.append("</form>");
             html.append("<h3>Crawler Stats</h3>");
@@ -207,10 +227,12 @@ public class HTMLKafkaServer {
             html.append("<div id='seed-panel'>");
             html.append("<label>Add Domain</label>");
             html.append("<form method='POST' action='/seed' style='display:flex;gap:8px;flex:1;flex-wrap:wrap'>");
+            html.append(csrfField);
             html.append("<input type='text' name='url' placeholder='https://example.com' />");
             html.append("<button type='submit'>Crawl</button>");
             html.append("</form>");
             html.append("<form method='POST' action='/clear'>");
+            html.append(csrfField);
             html.append("<button type='submit' class='btn-clear'>Clear Data</button>");
             html.append("</form>");
             html.append("</div>");
