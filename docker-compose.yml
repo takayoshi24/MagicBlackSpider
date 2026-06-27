@@ -13,6 +13,11 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_LOG_RETENTION_HOURS: 1
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
     healthcheck:
       test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 10s
