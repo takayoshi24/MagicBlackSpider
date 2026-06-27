@@ -23,6 +23,7 @@ public class Main {
         String kafkaTopic = args.length > 3 ? args[3] : "pages";
         int htmlPort = parsePort(args, 4, 4567, "htmlPort");
         int maxDepth = parsePositiveInt(args, 5, Integer.MAX_VALUE, "maxDepth");
+        int threadCount = parsePositiveInt(args, 6, 4, "threads");
 
         // Scheduler
         Scheduler scheduler = new Scheduler();
@@ -43,8 +44,6 @@ public class Main {
         // Producer worker reads from producerQueue and publishes to Kafka
         KafkaProducerWorker producerWorker = new KafkaProducerWorker(kafkaServers, kafkaTopic, producerQueue);
         producerWorker.start();
-
-        int threadCount = 4;
 
         // HTML server reads from Kafka consumer into displayQueue
         HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue, scheduler, threadCount);
@@ -80,7 +79,7 @@ public class Main {
     }
 
     private static final String USAGE =
-        "Usage: <seed> [maxPages] [kafkaServers] [kafkaTopic] [htmlPort] [maxDepth]";
+        "Usage: <seed> [maxPages] [kafkaServers] [kafkaTopic] [htmlPort] [maxDepth] [threads]";
 
     private static int parsePositiveInt(String[] args, int index, int defaultValue, String name) {
         if (args.length <= index) return defaultValue;
