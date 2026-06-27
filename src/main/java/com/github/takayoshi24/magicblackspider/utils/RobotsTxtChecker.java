@@ -145,9 +145,9 @@ public class RobotsTxtChecker {
             if (bestDisallow == null) return true;
             return bestAllow.length() >= bestDisallow.length();
         } catch (Exception e) {
-            logger.warn("Błąd parsowania URL {}: {}", url, e.getMessage());
+            logger.warn("Malformed URL — denying crawl {}: {}", url, e.getMessage());
+            return false;
         }
-        return true;
     }
 
     /**
