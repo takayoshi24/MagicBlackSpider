@@ -14,11 +14,11 @@ public class Main {
     public static void main(String[] args) throws InterruptedException {
         // Parametry startowe
         String seed = args.length > 0 ? args[0] : null;
-        int maxPages = args.length > 1 ? Integer.parseInt(args[1]) : 1200;
+        int maxPages = parsePositiveInt(args, 1, 1200, "maxPages");
         String kafkaServers = args.length > 2 ? args[2] : "localhost:9092";
         String kafkaTopic = args.length > 3 ? args[3] : "pages";
-        int htmlPort = args.length > 4 ? Integer.parseInt(args[4]) : 4567;
-        int maxDepth = args.length > 5 ? Integer.parseInt(args[5]) : Integer.MAX_VALUE;
+        int htmlPort = parsePort(args, 4, 4567, "htmlPort");
+        int maxDepth = parsePositiveInt(args, 5, Integer.MAX_VALUE, "maxDepth");
 
         // Scheduler
         Scheduler scheduler = new Scheduler();
@@ -68,6 +68,45 @@ public class Main {
 
             scheduler.reset();
             currentSeed = null; // subsequent crawls start from a URL submitted via the web UI
+        }
+    }
+
+    private static final String USAGE =
+        "Usage: <seed> [maxPages] [kafkaServers] [kafkaTopic] [htmlPort] [maxDepth]";
+
+    private static int parsePositiveInt(String[] args, int index, int defaultValue, String name) {
+        if (args.length <= index) return defaultValue;
+        try {
+            int value = Integer.parseInt(args[index]);
+            if (value <= 0) {
+                System.err.println("Error: " + name + " must be > 0 (got " + value + ")");
+                System.err.println(USAGE);
+                System.exit(1);
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            System.err.println("Error: " + name + " must be an integer (got \"" + args[index] + "\")");
+            System.err.println(USAGE);
+            System.exit(1);
+            return defaultValue; // unreachable, satisfies compiler
+        }
+    }
+
+    private static int parsePort(String[] args, int index, int defaultValue, String name) {
+        if (args.length <= index) return defaultValue;
+        try {
+            int port = Integer.parseInt(args[index]);
+            if (port < 1 || port > 65535) {
+                System.err.println("Error: " + name + " must be between 1 and 65535 (got " + port + ")");
+                System.err.println(USAGE);
+                System.exit(1);
+            }
+            return port;
+        } catch (NumberFormatException e) {
+            System.err.println("Error: " + name + " must be an integer (got \"" + args[index] + "\")");
+            System.err.println(USAGE);
+            System.exit(1);
+            return defaultValue; // unreachable, satisfies compiler
         }
     }
 }
