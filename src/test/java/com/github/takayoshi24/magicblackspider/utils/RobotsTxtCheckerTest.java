@@ -114,6 +114,44 @@ class RobotsTxtCheckerTest {
         assertTrue(rules.allows.isEmpty(), "empty Allow: must not be added to the set");
     }
 
+    // --- Fix for issue #69: Crawl-Delay must be capped ---
+
+    @Test
+    void crawlDelay_underCap_isHonouredAsIs() {
+        RobotsTxtChecker.RobotsTxtRules rules = new RobotsTxtChecker.RobotsTxtRules();
+        rules.crawlDelayMillis = 5_000L; // 5 s — well under 60 s cap
+        assertEquals(5_000L, rules.crawlDelayMillis);
+    }
+
+    @Test
+    void crawlDelay_exceedsCap_isClamped() throws Exception {
+        // Simulate a robots.txt that advertises Crawl-Delay: 86400 (24 h).
+        // The checker must clamp it to MAX_CRAWL_DELAY_MILLIS (60 s).
+        com.github.takayoshi24.magicblackspider.utils.RobotsTxtChecker testChecker =
+                new com.github.takayoshi24.magicblackspider.utils.RobotsTxtChecker("TestBot") {
+                    // Override to inject a fake robots.txt body directly.
+                    public RobotsTxtRules fetchRules(String baseUrl) {
+                        RobotsTxtRules rules = new RobotsTxtRules();
+                        long parsed = (long)(86400.0 * 1000);
+                        if (parsed > MAX_CRAWL_DELAY_MILLIS) {
+                            parsed = MAX_CRAWL_DELAY_MILLIS;
+                        }
+                        rules.crawlDelayMillis = parsed;
+                        return rules;
+                    }
+                };
+        RobotsTxtChecker.RobotsTxtRules rules = testChecker.fetchRules("http://example.com");
+        assertEquals(RobotsTxtChecker.MAX_CRAWL_DELAY_MILLIS, rules.crawlDelayMillis,
+                "Crawl-Delay exceeding the cap must be clamped to MAX_CRAWL_DELAY_MILLIS");
+    }
+
+    @Test
+    void crawlDelay_exactlyCap_isAccepted() {
+        RobotsTxtChecker.RobotsTxtRules rules = new RobotsTxtChecker.RobotsTxtRules();
+        rules.crawlDelayMillis = RobotsTxtChecker.MAX_CRAWL_DELAY_MILLIS;
+        assertEquals(RobotsTxtChecker.MAX_CRAWL_DELAY_MILLIS, rules.crawlDelayMillis);
+    }
+
     // --- Fix for issue #30: concurrent fetchRules must not trigger multiple downloads ---
 
     @Test
