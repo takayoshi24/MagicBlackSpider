@@ -1,8 +1,10 @@
 package com.github.takayoshi24.magicblackspider.handler;
 
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.config.SslConfigs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +30,11 @@ public class KafkaProducerWorker {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
         props.put(ProducerConfig.ACKS_CONFIG, "1");
+        props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SSL");
+        props.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG,
+                System.getenv().getOrDefault("KAFKA_SSL_TRUSTSTORE_LOCATION", "certs/kafka.truststore.jks"));
+        props.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
+                System.getenv().getOrDefault("KAFKA_SSL_STORE_PASSWORD", "changeit"));
 
         this.producer = new KafkaProducer<>(props);
     }

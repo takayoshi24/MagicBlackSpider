@@ -15,7 +15,7 @@ public class Main {
         // Parametry startowe
         String seed = args.length > 0 ? args[0] : null;
         int maxPages = parsePositiveInt(args, 1, 1200, "maxPages");
-        String kafkaServers = args.length > 2 ? args[2] : "localhost:9092";
+        String kafkaServers = args.length > 2 ? args[2] : "localhost:9095";
         String kafkaTopic = args.length > 3 ? args[3] : "pages";
         int htmlPort = parsePort(args, 4, 4567, "htmlPort");
         int maxDepth = parsePositiveInt(args, 5, Integer.MAX_VALUE, "maxDepth");
