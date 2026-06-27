@@ -44,12 +44,14 @@ public class Main {
         KafkaProducerWorker producerWorker = new KafkaProducerWorker(kafkaServers, kafkaTopic, producerQueue);
         producerWorker.start();
 
+        int threadCount = 4;
+
         // HTML server reads from Kafka consumer into displayQueue
-        HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue, scheduler);
+        HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue, scheduler, threadCount);
         htmlServer.startServer(htmlPort);
 
         // Crawler
-        MagicBlackSpider spider = new MagicBlackSpider(scheduler, fetcher, handler, 4, 500);
+        MagicBlackSpider spider = new MagicBlackSpider(scheduler, fetcher, handler, threadCount, 500);
         htmlServer.setSpider(spider);
 
         // Clean up Kafka and web server on Ctrl+C / SIGTERM
