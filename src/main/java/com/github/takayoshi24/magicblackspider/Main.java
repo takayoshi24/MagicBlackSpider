@@ -57,6 +57,7 @@ public class Main {
         String currentSeed = seed;
         while (true) {
             spider.start(currentSeed, maxPages);
+            htmlServer.signalCrawlFinished();
 
             System.out.println("=== KONIEC CRAWL’A ===");
             System.out.println("Przetworzone: " + spider.getProcessedCount());
