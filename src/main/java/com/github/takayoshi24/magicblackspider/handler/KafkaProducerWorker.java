@@ -31,12 +31,16 @@ public class KafkaProducerWorker {
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
         props.put(ProducerConfig.ACKS_CONFIG, "1");
         props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SSL");
-        props.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG,
-                System.getenv().getOrDefault("KAFKA_SSL_TRUSTSTORE_LOCATION", "certs/kafka.truststore.jks"));
+        String truststorePath = System.getenv().getOrDefault("KAFKA_SSL_TRUSTSTORE_LOCATION", "certs/kafka.truststore.jks");
+        props.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, truststorePath);
         props.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG,
                 System.getenv().getOrDefault("KAFKA_SSL_STORE_PASSWORD", "changeit"));
+        props.put(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, "JKS");
+        props.put(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG, "TLSv1.2,TLSv1.3");
         // Disable hostname verification for self-signed dev certs; the CA trust anchor is still enforced.
         props.put(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, "");
+        logger.info("[Kafka producer] truststore: {} exists={}", new java.io.File(truststorePath).getAbsolutePath(),
+                new java.io.File(truststorePath).exists());
 
         this.producer = new KafkaProducer<>(props);
     }
