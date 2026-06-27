@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.javalin.Javalin;
 import io.javalin.http.UnauthorizedResponse;
+import io.javalin.http.sse.SseClient;
 
 import java.io.ByteArrayOutputStream;
 import java.security.SecureRandom;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * HTML server do podglądu przetworzonych stron z Kafka z numeracją i kolorowaniem wg głębokości.
@@ -52,6 +54,7 @@ public class HTMLKafkaServer {
     private volatile String seedUrl = "";
     private final String csrfToken;
     private final String apiKey;
+    private final CopyOnWriteArrayList<SseClient> sseClients = new CopyOnWriteArrayList<>();
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
         this.messageQueue = messageQueue;
@@ -94,6 +97,9 @@ public class HTMLKafkaServer {
         app = Javalin.create().start("127.0.0.1", port);
 
         app.before(ctx -> {
+            // SSE endpoint is authenticated via the CSRF token query parameter instead of Basic Auth,
+            // because EventSource in browsers cannot send custom Authorization headers.
+            if ("/events".equals(ctx.path())) return;
             String auth = ctx.header("Authorization");
             if (auth != null && auth.startsWith("Basic ")) {
                 String decoded = new String(java.util.Base64.getDecoder().decode(auth.substring(6)));
@@ -139,6 +145,7 @@ public class HTMLKafkaServer {
                 crawlEndTime = 0;
                 seedUrl = url;
                 scheduler.add(url, 0);
+                broadcastEvent("state", buildStateJson());
             }
             ctx.redirect("/");
         });
@@ -153,6 +160,8 @@ public class HTMLKafkaServer {
             crawlStartTime = 0;
             crawlEndTime = 0;
             seedUrl = "";
+            broadcastEvent("state", buildStateJson());
+            broadcastEvent("clear_table", "{}");
             ctx.redirect("/");
         });
 
@@ -191,33 +200,29 @@ public class HTMLKafkaServer {
             seedUrl = "";
         });
 
-        app.get("/", ctx -> {
-            long startTime = crawlStartTime;
-            long endTime = crawlEndTime;
-            List<String> snapshot = new ArrayList<>(messageQueue);
-
-            // parse messages and count per depth
-            Map<Integer, Integer> depthCounts = new TreeMap<>();
-            List<int[]> depthList = new ArrayList<>(); // [depth] per entry
-            List<String> urlList = new ArrayList<>();
-
-            for (String msg : snapshot) {
-                String[] parts = msg.split("\\|", 2);
-                int depth = 0;
-                String url = msg;
-                if (parts.length == 2) {
-                    try { depth = Integer.parseInt(parts[0]); url = parts[1]; }
-                    catch (NumberFormatException ignored) {}
-                }
-                depthList.add(new int[]{depth});
-                urlList.add(url);
-                depthCounts.merge(depth, 1, Integer::sum);
+        // SSE endpoint — authenticated via CSRF token query param (EventSource cannot send auth headers)
+        app.sse("/events", client -> {
+            if (!csrfToken.equals(client.ctx().queryParam("token"))) {
+                log.warn("[AUTH] SSE connection rejected — bad token from {}", client.ctx().ip());
+                client.ctx().status(403);
+                return;
             }
+            // Send current state and a full snapshot so the client builds the table from scratch
+            client.sendEvent("state", buildStateJson());
+            client.sendEvent("clear_table", "{}");
+            for (String msg : new ArrayList<>(messageQueue)) {
+                client.sendEvent("url", msg);
+            }
+            sseClients.add(client);
+            client.onClose(() -> sseClients.remove(client));
+            client.keepAlive();
+        });
 
+        app.get("/", ctx -> {
+            String csrfField = "<input type='hidden' name='_csrf' value='" + csrfToken + "'/>";
             StringBuilder html = new StringBuilder("<!DOCTYPE html><html><head>");
             html.append("<meta charset='UTF-8'>");
             html.append("<title>MagicBlackSpider</title>");
-            html.append("<meta http-equiv='refresh' content='5'>");
             html.append("<style>");
             html.append("*{box-sizing:border-box;margin:0;padding:0}");
             html.append("body{background:#0f0f1a;color:#ccc;font-family:'Courier New',monospace;padding:24px 280px 24px 24px;min-height:100vh}");
@@ -258,8 +263,6 @@ public class HTMLKafkaServer {
             html.append(".spider{position:fixed;font-size:24px;pointer-events:none;user-select:none;z-index:9999;transition:opacity 0.6s ease}");
             html.append("</style></head><body>");
 
-            // stats panel
-            String csrfField = "<input type='hidden' name='_csrf' value='" + csrfToken + "'/>";
             html.append("<div id='stats'>");
             html.append("<form method='POST' action='/download'>");
             html.append(csrfField);
@@ -268,15 +271,8 @@ public class HTMLKafkaServer {
             html.append("<h3>Crawler Stats</h3>");
             html.append("<div class='timer-label'>Crawl Time</div>");
             html.append("<div class='timer' id='crawl-timer'>--:--:--</div>");
-            html.append("<div class='total'>").append(snapshot.size()).append("<span>pages crawled</span></div>");
-            for (Map.Entry<Integer, Integer> e : depthCounts.entrySet()) {
-                int d = e.getKey();
-                String color = depthColor(d);
-                html.append("<div class='row'>")
-                    .append("<span><span class='dot' style='background:").append(color).append("'></span>Depth ").append(d).append("</span>")
-                    .append("<span class='cnt'>").append(e.getValue()).append("</span>")
-                    .append("</div>");
-            }
+            html.append("<div class='total' id='total-count'>0<span>pages crawled</span></div>");
+            html.append("<div id='depth-rows'></div>");
             html.append("</div>");
 
             html.append("<div id='seed-panel'>");
@@ -294,69 +290,87 @@ public class HTMLKafkaServer {
             html.append("<h1>&#x1F577; MagicBlackSpider &mdash; Crawled Pages</h1>");
             html.append("<table>");
             html.append("<thead><tr><th>#</th><th>Depth</th><th>Address</th></tr></thead>");
-            html.append("<tbody>");
+            html.append("<tbody id='url-tbody'></tbody>");
+            html.append("</table>");
 
-            for (int i = 0; i < urlList.size(); i++) {
-                String url = urlList.get(i);
-                int depth = depthList.get(i)[0];
-                String color = depthColor(depth);
-
-                String scheme = "";
-                String host = url;
-                String path = "";
-                try {
-                    java.net.URI uri = new java.net.URI(url);
-                    if (uri.getScheme() != null) scheme = uri.getScheme();
-                    if (uri.getHost() != null) host = uri.getHost();
-                    String rawPath = uri.getPath() != null ? uri.getPath() : "";
-                    String query = uri.getQuery() != null ? "?" + uri.getQuery() : "";
-                    path = rawPath + query;
-                    if (path.isEmpty()) path = "/";
-                } catch (Exception ignored) {}
-
-                html.append("<tr>");
-                html.append("<td class='num'>").append(String.format("%03d", i + 1)).append("</td>");
-                html.append("<td><span class='badge' style='background:").append(color).append("22;color:").append(color)
-                    .append(";border:1px solid ").append(color).append("55'>D").append(depth).append("</span></td>");
-                html.append("<td><a class='url-link' href='").append(safeHref(url)).append("' target='_blank'>");
-                html.append("<div class='host-row'>");
-                if (!scheme.isEmpty()) html.append("<span class='scheme'>").append(escapeHtml(scheme)).append("</span>");
-                html.append("<span class='host'>").append(escapeHtml(host)).append("</span>");
-                html.append("</div>");
-                if (!path.equals("/")) html.append("<span class='path'>").append(escapeHtml(path)).append("</span>");
-                html.append("</a></td>");
-                html.append("</tr>");
-            }
-
-            html.append("</tbody></table>");
             html.append("<script>");
-            html.append("var startMs=").append(startTime).append(";");
-            html.append("var endMs=").append(endTime).append(";");
-            html.append("var el=document.getElementById('crawl-timer');");
+            html.append("var sseToken='").append(csrfToken).append("';");
+            html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null;");
+            html.append("var spidersRunning=false,spiders=[];");
             html.append("function pad(n){return String(n).padStart(2,'0');}");
+            html.append("function depthColor(d){var hue=(d*137.508)%360;return'hsl('+Math.round(hue)+',65%,58%)';}");
+            html.append("function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}");
             html.append("function tick(){");
-            html.append("  if(startMs===0){el.textContent='--:--:--';return;}");
-            html.append("  var ref=endMs!==0?endMs:Date.now();");
-            html.append("  var elapsed=Math.floor((ref-startMs)/1000);");
-            html.append("  if(elapsed<0)elapsed=0;");
-            html.append("  el.textContent=pad(Math.floor(elapsed/3600))+':'+pad(Math.floor((elapsed%3600)/60))+':'+pad(elapsed%60);");
+            html.append("var el=document.getElementById('crawl-timer');");
+            html.append("if(!el)return;");
+            html.append("if(startMs===0){el.textContent='--:--:--';return;}");
+            html.append("var ref=endMs!==0?endMs:Date.now();");
+            html.append("var elapsed=Math.floor((ref-startMs)/1000);");
+            html.append("if(elapsed<0)elapsed=0;");
+            html.append("el.textContent=pad(Math.floor(elapsed/3600))+':'+pad(Math.floor((elapsed%3600)/60))+':'+pad(elapsed%60);");
             html.append("}");
-            html.append("tick();if(endMs===0)setInterval(tick,1000);");
-            html.append("(function(){");
-            html.append("if(startMs===0||endMs!==0)return;");
-            html.append("var N=12,spiders=[];");
-            html.append("for(var i=0;i<N;i++){");
-            html.append("var el=document.createElement('div');");
-            html.append("el.className='spider';");
-            html.append("el.innerHTML='&#x1F577;';");
-            html.append("el.style.left=Math.random()*(window.innerWidth-32)+'px';");
-            html.append("el.style.top=Math.random()*(window.innerHeight-32)+'px';");
-            html.append("el.style.opacity='0';");
-            html.append("document.body.appendChild(el);");
-            html.append("(function(e,d){setTimeout(function(){e.style.opacity='1';},d);})(el,i*120+80);");
-            html.append("spiders.push({el:el,x:parseFloat(el.style.left),y:parseFloat(el.style.top),vx:(Math.random()-0.5)*3,vy:(Math.random()-0.5)*3});");
+            html.append("function updateStats(){");
+            html.append("var total=Object.values(depthCounts).reduce(function(a,b){return a+b;},0);");
+            html.append("document.getElementById('total-count').innerHTML=total+'<span>pages crawled</span>';");
+            html.append("var h='';");
+            html.append("Object.keys(depthCounts).sort(function(a,b){return+a-+b;}).forEach(function(d){");
+            html.append("var color=depthColor(+d);");
+            html.append("h+='<div class=\"row\"><span><span class=\"dot\" style=\"background:'+color+'\"></span>Depth '+d+'</span><span class=\"cnt\">'+depthCounts[d]+'</span></div>';");
+            html.append("});");
+            html.append("document.getElementById('depth-rows').innerHTML=h;");
             html.append("}");
-            html.append("function frame(){");
+            html.append("function addRow(msg){");
+            html.append("var idx=msg.indexOf('|');");
+            html.append("var depth=0,url=msg;");
+            html.append("if(idx!==-1){var d=parseInt(msg.substring(0,idx));if(!isNaN(d)){depth=d;url=msg.substring(idx+1);}}");
+            html.append("depthCounts[depth]=(depthCounts[depth]||0)+1;");
+            html.append("rowCount++;");
+            html.append("var scheme='',host=url,path='';");
+            html.append("try{var u=new URL(url);scheme=u.protocol.replace(':','');host=u.hostname;path=u.pathname+u.search;if(path==='/')path='';}catch(e){}");
+            html.append("var color=depthColor(depth);");
+            html.append("var num=String(rowCount).padStart(3,'0');");
+            html.append("var href=(url.startsWith('http://')||url.startsWith('https://'))?escHtml(url):'#';");
+            html.append("var tr=document.createElement('tr');");
+            html.append("tr.innerHTML='<td class=\"num\">'+num+'</td>'");
+            html.append("+'<td><span class=\"badge\" style=\"background:'+color+'22;color:'+color+';border:1px solid '+color+'55\">D'+depth+'</span></td>'");
+            html.append("+'<td><a class=\"url-link\" href=\"'+href+'\" target=\"_blank\">'");
+            html.append("+'<div class=\"host-row\">'");
+            html.append("+(scheme?'<span class=\"scheme\">'+escHtml(scheme)+'</span>':'')");
+            html.append("+'<span class=\"host\">'+escHtml(host)+'</span>'");
+            html.append("+'</div>'");
+            html.append("+(path?'<span class=\"path\">'+escHtml(path)+'</span>':'')");
+            html.append("+'</a></td>';");
+            html.append("document.getElementById('url-tbody').appendChild(tr);");
+            html.append("updateStats();");
+            html.append("}");
+            html.append("function applyState(data){");
+            html.append("startMs=data.startMs||0;endMs=data.endMs||0;");
+            html.append("if(timerInterval){clearInterval(timerInterval);timerInterval=null;}");
+            html.append("tick();");
+            html.append("if(startMs>0&&endMs===0){timerInterval=setInterval(tick,1000);startSpiders();}");
+            html.append("else{stopSpiders();}");
+            html.append("}");
+            html.append("function startSpiders(){");
+            html.append("if(spidersRunning)return;spidersRunning=true;spiders=[];");
+            html.append("for(var i=0;i<12;i++){");
+            html.append("var e=document.createElement('div');");
+            html.append("e.className='spider';e.innerHTML='&#x1F577;';");
+            html.append("e.style.left=Math.random()*(window.innerWidth-32)+'px';");
+            html.append("e.style.top=Math.random()*(window.innerHeight-32)+'px';");
+            html.append("e.style.opacity='0';");
+            html.append("document.body.appendChild(e);");
+            html.append("(function(el,d){setTimeout(function(){el.style.opacity='1';},d);})(e,i*120+80);");
+            html.append("spiders.push({el:e,x:parseFloat(e.style.left),y:parseFloat(e.style.top),vx:(Math.random()-0.5)*3,vy:(Math.random()-0.5)*3});");
+            html.append("}");
+            html.append("requestAnimationFrame(animateSpiders);");
+            html.append("}");
+            html.append("function stopSpiders(){");
+            html.append("if(!spidersRunning)return;spidersRunning=false;");
+            html.append("spiders.forEach(function(s){s.el.style.opacity='0';setTimeout(function(){if(s.el.parentNode)s.el.parentNode.removeChild(s.el);},700);});");
+            html.append("spiders=[];");
+            html.append("}");
+            html.append("function animateSpiders(){");
+            html.append("if(!spidersRunning)return;");
             html.append("var W=window.innerWidth-32,H=window.innerHeight-32;");
             html.append("for(var i=0;i<spiders.length;i++){");
             html.append("var s=spiders[i];");
@@ -366,35 +380,41 @@ public class HTMLKafkaServer {
             html.append("if(s.y<0){s.y=0;s.vy=Math.abs(s.vy);}");
             html.append("if(s.y>H){s.y=H;s.vy=-Math.abs(s.vy);}");
             html.append("if(Math.random()<0.01){");
-            html.append("s.vx+=(Math.random()-0.5)*1.2;");
-            html.append("s.vy+=(Math.random()-0.5)*1.2;");
+            html.append("s.vx+=(Math.random()-0.5)*1.2;s.vy+=(Math.random()-0.5)*1.2;");
             html.append("var spd=Math.sqrt(s.vx*s.vx+s.vy*s.vy);");
             html.append("if(spd>4){s.vx*=4/spd;s.vy*=4/spd;}");
-            html.append("if(spd<0.8){s.vx*=1.5/spd;s.vy*=1.5/spd;}}");
+            html.append("if(spd<0.8){s.vx*=1.5/spd;s.vy*=1.5/spd;}");
+            html.append("}");
             html.append("var ang=Math.atan2(s.vy,s.vx)*180/Math.PI;");
-            html.append("s.el.style.left=s.x+'px';");
-            html.append("s.el.style.top=s.y+'px';");
+            html.append("s.el.style.left=s.x+'px';s.el.style.top=s.y+'px';");
             html.append("s.el.style.transform='rotate('+ang+'deg)';");
             html.append("}");
-            html.append("requestAnimationFrame(frame);");
+            html.append("requestAnimationFrame(animateSpiders);");
             html.append("}");
-            html.append("frame();");
-            html.append("})();");
+            html.append("var es=new EventSource('/events?token='+encodeURIComponent(sseToken));");
+            html.append("es.addEventListener('state',function(e){applyState(JSON.parse(e.data));});");
+            html.append("es.addEventListener('url',function(e){addRow(e.data);});");
+            html.append("es.addEventListener('clear_table',function(e){");
+            html.append("document.getElementById('url-tbody').innerHTML='';");
+            html.append("rowCount=0;depthCounts={};updateStats();stopSpiders();");
+            html.append("});");
             html.append("</script>");
             html.append("</body></html>");
             ctx.html(html.toString());
         });
 
-        // w tle pobieranie z Kafki i dodawanie do kolejki
+        // Background thread: consume from Kafka and push to the queue and live SSE clients
         running = true;
         consumerThread = new Thread(() -> {
             try {
                 while (running) {
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                     for (ConsumerRecord<String, String> record : records) {
-                        while (!messageQueue.offer(record.value())) {
+                        String value = record.value();
+                        while (!messageQueue.offer(value)) {
                             messageQueue.poll();
                         }
+                        broadcastEvent("url", value);
                     }
                 }
             } finally {
@@ -408,6 +428,7 @@ public class HTMLKafkaServer {
 
     public void signalCrawlFinished() {
         crawlEndTime = System.currentTimeMillis();
+        broadcastEvent("state", buildStateJson());
     }
 
     public void stopServer() {
@@ -422,6 +443,27 @@ public class HTMLKafkaServer {
         if (app != null) {
             app.stop();
         }
+    }
+
+    private String buildStateJson() {
+        String safeUrl = seedUrl
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+        return "{\"startMs\":" + crawlStartTime + ",\"endMs\":" + crawlEndTime + ",\"seedUrl\":\"" + safeUrl + "\"}";
+    }
+
+    private void broadcastEvent(String event, String data) {
+        List<SseClient> dead = new ArrayList<>();
+        for (SseClient client : sseClients) {
+            try {
+                client.sendEvent(event, data);
+            } catch (Exception e) {
+                dead.add(client);
+            }
+        }
+        sseClients.removeAll(dead);
     }
 
     // HSL golden-angle distribution — each depth gets a visually distinct hue
