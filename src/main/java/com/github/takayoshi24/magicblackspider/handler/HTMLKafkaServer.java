@@ -61,8 +61,10 @@ public class HTMLKafkaServer {
     private final CopyOnWriteArrayList<SseClient> sseClients = new CopyOnWriteArrayList<>();
     private volatile MagicBlackSpider spider;
     private ScheduledExecutorService statsTimer;
+    private final int threadCount;
 
-    public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler) {
+    public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler, int threadCount) {
+        this.threadCount = threadCount;
         this.messageQueue = messageQueue;
         this.scheduler = scheduler;
         SecureRandom rng = new SecureRandom();
@@ -354,7 +356,7 @@ public class HTMLKafkaServer {
             html.append("var rate=(liveProcessed/elapsed).toFixed(1);");
             html.append("var h='';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Queue</span><span class=\"live-val accent\">'+liveQueue+'</span></div>';");
-            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">In-flight</span><span class=\"live-val accent\">'+liveInFlight+'/4</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">In-flight</span><span class=\"live-val accent\">'+liveInFlight+'/" + threadCount + "</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Unique hosts</span><span class=\"live-val\">'+uniqueHosts.size+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Rejected dupes</span><span class=\"live-val warn\">'+liveRejected+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Failed fetches</span><span class=\"live-val warn\">'+liveFailed+'</span></div>';");
