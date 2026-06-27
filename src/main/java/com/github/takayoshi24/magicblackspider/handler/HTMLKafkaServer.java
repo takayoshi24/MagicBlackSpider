@@ -133,6 +133,11 @@ public class HTMLKafkaServer {
                 return;
             }
             String url = ctx.formParam("url");
+            if (isSeedUrlTooLong(url)) {
+                log.warn("[SEED] Rejected oversized url ({} chars) from {}", url == null ? 0 : url.length(), ctx.ip());
+                ctx.status(400).result("URL too long");
+                return;
+            }
             if (url != null && !url.isBlank()) {
                 url = url.trim();
                 if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -577,6 +582,12 @@ public class HTMLKafkaServer {
 
     private static String escapeHtml(String text) {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#x27;");
+    }
+
+    static final int MAX_SEED_URL_LENGTH = 2048;
+
+    static boolean isSeedUrlTooLong(String url) {
+        return url != null && url.length() > MAX_SEED_URL_LENGTH;
     }
 
     static String safeHref(String url) {
