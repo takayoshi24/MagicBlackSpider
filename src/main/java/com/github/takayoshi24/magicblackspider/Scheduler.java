@@ -57,7 +57,12 @@ public class Scheduler {
     }
 
     public void markVisited(String url) {
-        visitedCount.incrementAndGet();
+        lock.lock();
+        try {
+            visitedCount.incrementAndGet();
+        } finally {
+            lock.unlock();
+        }
     }
 
     public void addPoisonPill() {
