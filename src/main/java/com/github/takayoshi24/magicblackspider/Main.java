@@ -46,18 +46,27 @@ public class Main {
         // Crawler
         MagicBlackSpider spider = new MagicBlackSpider(scheduler, fetcher, handler, 4, 500);
 
-        // Start crawl
-        spider.start(seed, maxPages);
+        // Clean up Kafka and web server on Ctrl+C / SIGTERM
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            producerWorker.stop();
+            try { producerWorker.awaitStop(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            htmlServer.stopServer();
+        }));
 
-        // Po zakończeniu crawl
-        System.out.println("=== KONIEC CRAWL’A ===");
-        System.out.println("Przetworzone: " + spider.getProcessedCount());
-        System.out.println("Odwiedzone: " + scheduler.visitedSize());
-        System.out.println("Nieprzetworzone URL: " + scheduler.queueSize());
-        System.out.println("Błędne / odrzucone: " + scheduler.getRejectedCount());
+        // Run crawl loop — after each crawl finishes, reset and wait for the next seed from the UI
+        String currentSeed = seed;
+        while (true) {
+            spider.start(currentSeed, maxPages);
 
-        producerWorker.stop();
-        producerWorker.awaitStop();
-        htmlServer.stopServer();
+            System.out.println("=== KONIEC CRAWL’A ===");
+            System.out.println("Przetworzone: " + spider.getProcessedCount());
+            System.out.println("Odwiedzone: " + scheduler.visitedSize());
+            System.out.println("Nieprzetworzone URL: " + scheduler.queueSize());
+            System.out.println("Błędne / odrzucone: " + scheduler.getRejectedCount());
+            System.out.println("Oczekiwanie na kolejne zlecenie crawl’a przez UI...");
+
+            scheduler.reset();
+            currentSeed = null; // subsequent crawls start from a URL submitted via the web UI
+        }
     }
 }

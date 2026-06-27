@@ -21,7 +21,7 @@ public class MagicBlackSpider {
     private final Scheduler scheduler;
     private final Fetcher fetcher;
     private final PageHandler handler;
-    private final ExecutorService executor;
+    private final int threads;
     private final long politenessMillis;
 
     private final PolitenessManager politenessManager;
@@ -38,13 +38,16 @@ public class MagicBlackSpider {
         this.scheduler = scheduler;
         this.fetcher = fetcher;
         this.handler = handler;
-        this.executor = Executors.newFixedThreadPool(threads);
+        this.threads = threads;
         this.politenessMillis = politenessMillis;
         this.politenessManager = politenessManager;
         this.robotsChecker = robotsChecker;
     }
 
     public void start(String seedUrl, int maxPages) throws InterruptedException {
+        processed.set(0);
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+
         // Add seed only when explicitly provided (null means wait for URL from the UI)
         if (seedUrl != null && !seedUrl.isBlank()) {
             scheduler.add(seedUrl, 0);
