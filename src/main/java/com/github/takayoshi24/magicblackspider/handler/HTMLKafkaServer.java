@@ -178,6 +178,34 @@ public class HTMLKafkaServer {
             ctx.redirect("/");
         });
 
+        app.post("/pause", ctx -> {
+            if (!csrfToken.equals(ctx.formParam("_csrf"))) {
+                log.warn("[CSRF] CSRF validation failed on /pause from {}", ctx.ip());
+                ctx.status(403).result("Forbidden");
+                return;
+            }
+            if (spider != null && crawlStartTime > 0 && crawlEndTime == 0) {
+                spider.pause();
+                log.info("[CRAWL] Crawl paused by user from {}", ctx.ip());
+                broadcastEvent("state", buildStateJson());
+            }
+            ctx.status(204).result("");
+        });
+
+        app.post("/resume", ctx -> {
+            if (!csrfToken.equals(ctx.formParam("_csrf"))) {
+                log.warn("[CSRF] CSRF validation failed on /resume from {}", ctx.ip());
+                ctx.status(403).result("Forbidden");
+                return;
+            }
+            if (spider != null && crawlStartTime > 0 && crawlEndTime == 0) {
+                spider.resume();
+                log.info("[CRAWL] Crawl resumed by user from {}", ctx.ip());
+                broadcastEvent("state", buildStateJson());
+            }
+            ctx.status(204).result("");
+        });
+
         app.post("/download", ctx -> {
             if (!csrfToken.equals(ctx.formParam("_csrf"))) {
                 log.warn("[CSRF] CSRF validation failed on /download from {}", ctx.ip());
@@ -292,6 +320,11 @@ public class HTMLKafkaServer {
             html.append("#depth-panel .row{display:flex;justify-content:space-between;align-items:center;margin:5px 0;font-size:12px}");
             html.append("#depth-panel .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex-shrink:0}");
             html.append("#depth-panel .cnt{font-weight:bold;color:#fff}");
+            html.append(".btn-pause{background:#2a2000;border:1px solid #aa8800;border-radius:6px;padding:8px 18px;color:#ffd060;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap}");
+            html.append(".btn-pause:hover{background:#3a2e00;border-color:#ffd060}");
+            html.append(".btn-resume{background:#0a2a0a;border:1px solid #228822;border-radius:6px;padding:8px 18px;color:#6fcf97;font-family:'Courier New',monospace;font-size:12px;letter-spacing:1px;cursor:pointer;white-space:nowrap}");
+            html.append(".btn-resume:hover{background:#0e3a0e;border-color:#6fcf97}");
+            html.append("button:disabled{opacity:0.35;cursor:not-allowed}");
             html.append("</style></head><body>");
 
             html.append("<div id='depth-panel'>");
@@ -322,6 +355,7 @@ public class HTMLKafkaServer {
             html.append("<input type='text' name='url' placeholder='https://example.com' />");
             html.append("<button type='submit'>Crawl</button>");
             html.append("</form>");
+            html.append("<button id='btn-pause-resume' class='btn-pause' disabled onclick='togglePause()'>Pause</button>");
             html.append("<form method='POST' action='/clear'>");
             html.append(csrfField);
             html.append("<button type='submit' class='btn-clear'>Clear Data</button>");
@@ -337,6 +371,7 @@ public class HTMLKafkaServer {
             html.append("var sseToken='").append(csrfToken).append("';");
             html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null,depthPanelDragged=false;");
             html.append("var liveQueue=0,liveInFlight=0,liveRejected=0,liveFailed=0,liveRobotsBlocked=0,liveProcessed=0;");
+            html.append("var crawlPaused=false;");
             html.append("var uniqueHosts=new Set();");
             html.append("var spidersRunning=false,spiders=[],depthSpiders={},depthRecent={},speedInterval=null;");
             html.append("function pad(n){return String(n).padStart(2,'0');}");
@@ -404,13 +439,26 @@ public class HTMLKafkaServer {
             html.append("document.getElementById('url-tbody').appendChild(tr);");
             html.append("updateStats();");
             html.append("}");
+            html.append("function togglePause(){");
+            html.append("var url=crawlPaused?'/resume':'/pause';");
+            html.append("fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},");
+            html.append("body:'_csrf='+encodeURIComponent(sseToken)});");
+            html.append("}");
+            html.append("function updatePauseButton(){");
+            html.append("var btn=document.getElementById('btn-pause-resume');");
+            html.append("if(!btn)return;");
+            html.append("var active=startMs>0&&endMs===0;");
+            html.append("btn.disabled=!active;");
+            html.append("if(crawlPaused){btn.textContent='\\u25B6 Resume';btn.className='btn-resume';}");
+            html.append("else{btn.textContent='\\u23F8 Pause';btn.className='btn-pause';}");
+            html.append("}");
             html.append("function applyState(data){");
-            html.append("startMs=data.startMs||0;endMs=data.endMs||0;");
+            html.append("startMs=data.startMs||0;endMs=data.endMs||0;crawlPaused=!!data.paused;");
             html.append("if(timerInterval){clearInterval(timerInterval);timerInterval=null;}");
             html.append("tick();");
-            html.append("if(startMs>0&&endMs===0){timerInterval=setInterval(tick,1000);startSpiders();}");
+            html.append("if(startMs>0&&endMs===0){timerInterval=setInterval(tick,1000);if(!crawlPaused)startSpiders();else stopSpiders();}");
             html.append("else{stopSpiders();}");
-            html.append("updateLiveStats();");
+            html.append("updateLiveStats();updatePauseButton();");
             html.append("}");
             html.append("function spiderSize(cnt){return Math.max(16,Math.min(56,14+Math.log(cnt+1)*9));}");
             html.append("function updateSpiderSpeeds(){");
@@ -599,7 +647,9 @@ public class HTMLKafkaServer {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
-        return "{\"startMs\":" + crawlStartTime + ",\"endMs\":" + crawlEndTime + ",\"seedUrl\":\"" + safeUrl + "\"}";
+        boolean isPaused = spider != null && spider.isPaused();
+        return "{\"startMs\":" + crawlStartTime + ",\"endMs\":" + crawlEndTime
+                + ",\"seedUrl\":\"" + safeUrl + "\",\"paused\":" + isPaused + "}";
     }
 
     private void broadcastEvent(String event, String data) {
