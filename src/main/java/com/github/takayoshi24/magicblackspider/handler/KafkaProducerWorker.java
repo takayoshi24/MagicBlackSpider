@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class KafkaProducerWorker {
 
@@ -20,8 +21,13 @@ public class KafkaProducerWorker {
     private final BlockingQueue<String> queue;
     private final String topic;
     private Thread workerThread;
+    private final AtomicInteger kafkaErrorCount;
+    private final Runnable onFirstError;
 
-    public KafkaProducerWorker(String bootstrapServers, String topic, BlockingQueue<String> queue) {
+    public KafkaProducerWorker(String bootstrapServers, String topic, BlockingQueue<String> queue,
+                               AtomicInteger kafkaErrorCount, Runnable onFirstError) {
+        this.kafkaErrorCount = kafkaErrorCount;
+        this.onFirstError = onFirstError;
         this.topic = topic;
         this.queue = queue;
 
@@ -58,6 +64,9 @@ public class KafkaProducerWorker {
                             (metadata, ex) -> {
                                 if (ex != null) {
                                     logger.warn("Failed to send record to Kafka: {}", ex.getMessage());
+                                    if (kafkaErrorCount.getAndIncrement() == 0 && onFirstError != null) {
+                                        onFirstError.run();
+                                    }
                                 }
                             });
                 }
