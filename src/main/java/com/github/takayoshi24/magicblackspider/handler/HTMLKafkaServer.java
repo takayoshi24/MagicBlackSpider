@@ -413,7 +413,7 @@ public class HTMLKafkaServer {
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Queue</span><span class=\"live-val accent\">'+liveQueue+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">In-flight</span><span class=\"live-val accent\">'+liveInFlight+'/" + threadCount + "</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Unique hosts</span><span class=\"live-val\">'+uniqueHosts.size+'</span></div>';");
-            html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Rejected dupes</span><span class=\"live-val warn\">'+liveRejected+'</span></div>';");
+            html.append("h+='<div class=\"live-row\"><span class=\"live-label\" title=\"Total duplicate link attempts — same URL discovered across multiple pages\">Dup. link attempts</span><span class=\"live-val warn\">'+liveRejected+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Failed fetches</span><span class=\"live-val warn\">'+liveFailed+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Robots blocked</span><span class=\"live-val warn\">'+liveRobotsBlocked+'</span></div>';");
             html.append("if(liveKafkaErrors>0){h+='<div class=\"live-row\"><span class=\"live-label\">Kafka errors</span><span class=\"live-val warn\">'+liveKafkaErrors+'</span></div>';}");
