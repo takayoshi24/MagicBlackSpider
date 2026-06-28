@@ -54,7 +54,8 @@ public class KafkaPageHandler implements PageHandler {
                 URI newUri = URI.create(href);
                 String scheme = newUri.getScheme();
                 if (!"http".equals(scheme) && !"https".equals(scheme)) continue;
-                if (!newUri.getHost().equalsIgnoreCase(baseDomain)) continue;
+                String linkHost = newUri.getHost();
+                if (linkHost == null || !linkHost.equalsIgnoreCase(baseDomain)) continue;
                 if (depth + 1 <= maxDepth && scheduler.add(href, depth + 1)) {
                     newLinks++;
                 }
