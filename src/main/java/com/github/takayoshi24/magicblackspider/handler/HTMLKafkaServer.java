@@ -379,6 +379,7 @@ public class HTMLKafkaServer {
             html.append("var crawlPaused=false;");
             html.append("var uniqueHosts=new Set();");
             html.append("var spidersRunning=false,spiders=[],depthSpiders={},depthRecent={},speedInterval=null;");
+            html.append("var recentUrlTimes=[];");
             html.append("function pad(n){return String(n).padStart(2,'0');}");
             html.append("function depthColor(d){var hue=(d*137.508)%360;return'hsl('+Math.round(hue)+',65%,58%)';}");
             html.append("function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}");
@@ -408,7 +409,9 @@ public class HTMLKafkaServer {
             html.append("divider.style.display='';");
             html.append("var ref=endMs!==0?endMs:(pausedAtMs?pausedAtMs:Date.now());");
             html.append("var elapsed=Math.max(1,Math.floor((ref-startMs-totalPausedMs)/1000));");
-            html.append("var rate=crawlPaused?'0.0':(liveProcessed/elapsed).toFixed(1);");
+            html.append("var rNow=Date.now();recentUrlTimes=recentUrlTimes.filter(function(t){return rNow-t<=30000;});");
+            html.append("var winS=Math.min(30,elapsed);");
+            html.append("var rate=crawlPaused?'0.0':(recentUrlTimes.length/winS).toFixed(1);");
             html.append("var h='';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Queue</span><span class=\"live-val accent\">'+liveQueue+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">In-flight</span><span class=\"live-val accent\">'+liveInFlight+'/" + threadCount + "</span></div>';");
@@ -425,6 +428,7 @@ public class HTMLKafkaServer {
             html.append("var depth=0,url=msg;");
             html.append("if(idx!==-1){var d=parseInt(msg.substring(0,idx));if(!isNaN(d)){depth=d;url=msg.substring(idx+1);}}");
             html.append("depthCounts[depth]=(depthCounts[depth]||0)+1;(depthRecent[depth]=depthRecent[depth]||[]).push(Date.now());syncDepthSpiders();");
+            html.append("recentUrlTimes.push(Date.now());");
             html.append("rowCount++;");
             html.append("var scheme='',host=url,path='';");
             html.append("try{var u=new URL(url);scheme=u.protocol.replace(':','');host=u.hostname;path=u.pathname+u.search;if(path==='/')path='';}catch(e){}");
@@ -468,7 +472,7 @@ public class HTMLKafkaServer {
             html.append("}");
             html.append("function applyState(data){");
             html.append("var newStart=data.startMs||0;");
-            html.append("if(newStart!==startMs&&newStart>0){totalPausedMs=0;pausedAtMs=0;}");
+            html.append("if(newStart!==startMs&&newStart>0){totalPausedMs=0;pausedAtMs=0;recentUrlTimes=[];}");
             html.append("startMs=newStart;endMs=data.endMs||0;");
             html.append("var prevPaused=crawlPaused;crawlPaused=!!data.paused;");
             html.append("if(crawlPaused&&!prevPaused){pausedAtMs=pausedAtMs||Date.now();}");
@@ -556,7 +560,7 @@ public class HTMLKafkaServer {
             html.append("document.getElementById('url-tbody').innerHTML='';");
             html.append("rowCount=0;depthCounts={};updateStats();stopSpiders();");
             html.append("liveQueue=0;liveInFlight=0;liveRejected=0;liveFailed=0;liveRobotsBlocked=0;liveProcessed=0;liveKafkaErrors=0;");
-            html.append("totalPausedMs=0;pausedAtMs=0;crawlPaused=false;");
+            html.append("totalPausedMs=0;pausedAtMs=0;crawlPaused=false;recentUrlTimes=[];");
             html.append("uniqueHosts=new Set();updateLiveStats();document.getElementById('kafka-error-banner').style.display='none';");
             html.append("});");
             html.append("(function(){");
