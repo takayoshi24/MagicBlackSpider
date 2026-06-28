@@ -44,9 +44,13 @@ public class SimpleFetcher implements Fetcher {
         this.retryDelayMillis = retryDelayMillis;
     }
 
+    protected boolean isSsrfBlocked(String url) {
+        return isBlockedUrl(url);
+    }
+
     @Override
     public Document fetch(String url) throws IOException {
-        if (isBlockedUrl(url)) {
+        if (isSsrfBlocked(url)) {
             logger.warn("[SSRF] Blocked fetch attempt to private/loopback address: {}", url);
             throw new IOException("Blocked URL (private/loopback address): " + url);
         }
@@ -71,13 +75,14 @@ public class SimpleFetcher implements Fetcher {
         throw new IOException("Nie udało się pobrać URL po " + maxRetries + " próbach: " + url);
     }
 
-    private Document fetchWithRedirects(String url) throws IOException {
+    Document fetchWithRedirects(String url) throws IOException {
         String current = url;
         for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
             Connection.Response response = Jsoup.connect(current)
                     .userAgent(userAgent)
                     .timeout(timeoutMillis)
                     .followRedirects(false)
+                    .ignoreHttpErrors(true)
                     .execute();
             int status = response.statusCode();
             if (status >= 300 && status < 400) {
