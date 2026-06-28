@@ -374,7 +374,7 @@ public class HTMLKafkaServer {
 
             html.append("<script>");
             html.append("var sseToken='").append(csrfToken).append("';");
-            html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null,depthPanelDragged=false;");
+            html.append("var startMs=0,endMs=0,pausedAtMs=0,rowCount=0,depthCounts={},timerInterval=null,depthPanelDragged=false;");
             html.append("var liveQueue=0,liveInFlight=0,liveRejected=0,liveFailed=0,liveRobotsBlocked=0,liveProcessed=0,liveKafkaErrors=0;");
             html.append("var crawlPaused=false;");
             html.append("var uniqueHosts=new Set();");
@@ -386,7 +386,7 @@ public class HTMLKafkaServer {
             html.append("var el=document.getElementById('crawl-timer');");
             html.append("if(!el)return;");
             html.append("if(startMs===0){el.textContent='--:--:--';return;}");
-            html.append("var ref=endMs!==0?endMs:Date.now();");
+            html.append("var ref=endMs!==0?endMs:(pausedAtMs?pausedAtMs:Date.now());");
             html.append("var elapsed=Math.floor((ref-startMs)/1000);");
             html.append("if(elapsed<0)elapsed=0;");
             html.append("el.textContent=pad(Math.floor(elapsed/3600))+':'+pad(Math.floor((elapsed%3600)/60))+':'+pad(elapsed%60);");
@@ -406,9 +406,9 @@ public class HTMLKafkaServer {
             html.append("var rows=document.getElementById('live-stats-rows');");
             html.append("if(startMs===0){divider.style.display='none';rows.innerHTML='';return;}");
             html.append("divider.style.display='';");
-            html.append("var ref=endMs!==0?endMs:Date.now();");
+            html.append("var ref=endMs!==0?endMs:(pausedAtMs?pausedAtMs:Date.now());");
             html.append("var elapsed=Math.max(1,Math.floor((ref-startMs)/1000));");
-            html.append("var rate=(liveProcessed/elapsed).toFixed(1);");
+            html.append("var rate=crawlPaused?'0.0':(liveProcessed/elapsed).toFixed(1);");
             html.append("var h='';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Queue</span><span class=\"live-val accent\">'+liveQueue+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">In-flight</span><span class=\"live-val accent\">'+liveInFlight+'/" + threadCount + "</span></div>';");
@@ -445,12 +445,18 @@ public class HTMLKafkaServer {
             html.append("document.getElementById('url-tbody').appendChild(tr);");
             html.append("updateStats();");
             html.append("}");
+            html.append("function applyPauseLocally(){");
+            html.append("if(crawlPaused){pausedAtMs=pausedAtMs||Date.now();if(timerInterval){clearInterval(timerInterval);timerInterval=null;}stopSpiders();}");
+            html.append("else{pausedAtMs=0;if(startMs>0&&endMs===0&&!timerInterval){timerInterval=setInterval(tick,1000);}startSpiders();}");
+            html.append("updatePauseButton();updateLiveStats();tick();");
+            html.append("}");
             html.append("function togglePause(){");
             html.append("var url=crawlPaused?'/resume':'/pause';");
-            html.append("crawlPaused=!crawlPaused;updatePauseButton();");
+            html.append("var prev=crawlPaused,prevMs=pausedAtMs;");
+            html.append("crawlPaused=!crawlPaused;applyPauseLocally();");
             html.append("fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},");
             html.append("body:'_csrf='+encodeURIComponent(sseToken)})");
-            html.append(".catch(function(){crawlPaused=!crawlPaused;updatePauseButton();});");
+            html.append(".catch(function(){crawlPaused=prev;pausedAtMs=prevMs;applyPauseLocally();});");
             html.append("}");
             html.append("function updatePauseButton(){");
             html.append("var btn=document.getElementById('btn-pause-resume');");
@@ -461,10 +467,13 @@ public class HTMLKafkaServer {
             html.append("else{btn.textContent='\\u23F8 Pause';btn.className='btn-pause';}");
             html.append("}");
             html.append("function applyState(data){");
-            html.append("startMs=data.startMs||0;endMs=data.endMs||0;crawlPaused=!!data.paused;");
+            html.append("startMs=data.startMs||0;endMs=data.endMs||0;");
+            html.append("var prevPaused=crawlPaused;crawlPaused=!!data.paused;");
+            html.append("if(crawlPaused&&!prevPaused){pausedAtMs=pausedAtMs||Date.now();}");
+            html.append("if(!crawlPaused){pausedAtMs=0;}");
             html.append("if(timerInterval){clearInterval(timerInterval);timerInterval=null;}");
             html.append("tick();");
-            html.append("if(startMs>0&&endMs===0){timerInterval=setInterval(tick,1000);if(!crawlPaused)startSpiders();else stopSpiders();}");
+            html.append("if(startMs>0&&endMs===0&&!crawlPaused){timerInterval=setInterval(tick,1000);startSpiders();}");
             html.append("else{stopSpiders();}");
             html.append("updateLiveStats();updatePauseButton();");
             html.append("}");
