@@ -41,13 +41,16 @@ public class Main {
         // PageHandler writes crawled URLs into the producer queue
         PageHandler handler = new KafkaPageHandler(producerQueue, maxDepth);
 
-        // Producer worker reads from producerQueue and publishes to Kafka
-        KafkaProducerWorker producerWorker = new KafkaProducerWorker(kafkaServers, kafkaTopic, producerQueue);
-        producerWorker.start();
-
         // HTML server reads from Kafka consumer into displayQueue
         HTMLKafkaServer htmlServer = new HTMLKafkaServer(kafkaServers, kafkaTopic, displayQueue, scheduler, threadCount);
         htmlServer.startServer(htmlPort);
+
+        // Producer worker reads from producerQueue and publishes to Kafka;
+        // shares the error counter with htmlServer so failures are surfaced in the UI.
+        KafkaProducerWorker producerWorker = new KafkaProducerWorker(
+                kafkaServers, kafkaTopic, producerQueue,
+                htmlServer.getKafkaErrorCount(), htmlServer::notifyFirstKafkaError);
+        producerWorker.start();
 
         // Crawler
         MagicBlackSpider spider = new MagicBlackSpider(scheduler, fetcher, handler, threadCount, 500);

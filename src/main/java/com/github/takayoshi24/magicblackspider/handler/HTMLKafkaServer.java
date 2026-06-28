@@ -38,6 +38,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.github.takayoshi24.magicblackspider.MagicBlackSpider;
 
 /**
@@ -62,6 +63,7 @@ public class HTMLKafkaServer {
     private volatile MagicBlackSpider spider;
     private ScheduledExecutorService statsTimer;
     private final int threadCount;
+    private final AtomicInteger kafkaErrorCount = new AtomicInteger(0);
 
     public HTMLKafkaServer(String bootstrapServers, String topic, BlockingQueue<String> messageQueue, Scheduler scheduler, int threadCount) {
         this.threadCount = threadCount;
@@ -173,6 +175,7 @@ public class HTMLKafkaServer {
             crawlStartTime = 0;
             crawlEndTime = 0;
             seedUrl = "";
+            kafkaErrorCount.set(0);
             broadcastEvent("state", buildStateJson());
             broadcastEvent("clear_table", "{}");
             ctx.redirect("/");
@@ -315,6 +318,7 @@ public class HTMLKafkaServer {
             html.append("#stats .live-val.warn{color:#e07070}");
             html.append("#stats .live-val.accent{color:#7eb8ff}");
             html.append("#stats .rate-val{font-size:15px;font-weight:bold;color:#6fcf97;letter-spacing:1px}");
+            html.append("#kafka-error-banner{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2a0a0a;border:1px solid #e07070;border-radius:8px;padding:12px 20px;color:#e07070;font-size:13px;z-index:9998;white-space:nowrap}");
             html.append("#depth-panel{position:fixed;right:24px;background:#13131f;border:1px solid #2a2a3e;border-radius:10px;padding:16px 20px;min-width:180px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.6);cursor:move;user-select:none}");
             html.append("#depth-panel h3{font-size:11px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}");
             html.append("#depth-panel .row{display:flex;justify-content:space-between;align-items:center;margin:5px 0;font-size:12px}");
@@ -348,6 +352,7 @@ public class HTMLKafkaServer {
             html.append("<div id='live-stats-rows'></div>");
             html.append("</div>");
 
+            html.append("<div id='kafka-error-banner'>&#9888; Kafka producer errors detected &mdash; pages may be dropped</div>");
             html.append("<div id='seed-panel'>");
             html.append("<label>Add Domain</label>");
             html.append("<form method='POST' action='/seed' style='display:flex;gap:8px;flex:1;flex-wrap:wrap'>");
@@ -370,7 +375,7 @@ public class HTMLKafkaServer {
             html.append("<script>");
             html.append("var sseToken='").append(csrfToken).append("';");
             html.append("var startMs=0,endMs=0,rowCount=0,depthCounts={},timerInterval=null,depthPanelDragged=false;");
-            html.append("var liveQueue=0,liveInFlight=0,liveRejected=0,liveFailed=0,liveRobotsBlocked=0,liveProcessed=0;");
+            html.append("var liveQueue=0,liveInFlight=0,liveRejected=0,liveFailed=0,liveRobotsBlocked=0,liveProcessed=0,liveKafkaErrors=0;");
             html.append("var crawlPaused=false;");
             html.append("var uniqueHosts=new Set();");
             html.append("var spidersRunning=false,spiders=[],depthSpiders={},depthRecent={},speedInterval=null;");
@@ -411,6 +416,7 @@ public class HTMLKafkaServer {
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Rejected dupes</span><span class=\"live-val warn\">'+liveRejected+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Failed fetches</span><span class=\"live-val warn\">'+liveFailed+'</span></div>';");
             html.append("h+='<div class=\"live-row\"><span class=\"live-label\">Robots blocked</span><span class=\"live-val warn\">'+liveRobotsBlocked+'</span></div>';");
+            html.append("if(liveKafkaErrors>0){h+='<div class=\"live-row\"><span class=\"live-label\">Kafka errors</span><span class=\"live-val warn\">'+liveKafkaErrors+'</span></div>';}");
             html.append("h+='<div class=\"live-row\" style=\"margin-top:8px\"><span class=\"live-label\">Crawl rate</span><span class=\"rate-val\">'+rate+'/s</span></div>';");
             html.append("rows.innerHTML=h;");
             html.append("}");
@@ -528,14 +534,15 @@ public class HTMLKafkaServer {
             html.append("es.addEventListener('stats',function(e){");
             html.append("var d=JSON.parse(e.data);");
             html.append("liveQueue=d.queue;liveInFlight=d.inFlight;liveRejected=d.rejected;");
-            html.append("liveFailed=d.failed;liveRobotsBlocked=d.robotsBlocked;liveProcessed=d.processed;");
+            html.append("liveFailed=d.failed;liveRobotsBlocked=d.robotsBlocked;liveProcessed=d.processed;liveKafkaErrors=d.kafkaErrors||0;");
             html.append("updateLiveStats();");
             html.append("});");
+            html.append("es.addEventListener('kafka_error',function(e){document.getElementById('kafka-error-banner').style.display='';});");
             html.append("es.addEventListener('clear_table',function(e){");
             html.append("document.getElementById('url-tbody').innerHTML='';");
             html.append("rowCount=0;depthCounts={};updateStats();stopSpiders();");
-            html.append("liveQueue=0;liveInFlight=0;liveRejected=0;liveFailed=0;liveRobotsBlocked=0;liveProcessed=0;");
-            html.append("uniqueHosts=new Set();updateLiveStats();");
+            html.append("liveQueue=0;liveInFlight=0;liveRejected=0;liveFailed=0;liveRobotsBlocked=0;liveProcessed=0;liveKafkaErrors=0;");
+            html.append("uniqueHosts=new Set();updateLiveStats();document.getElementById('kafka-error-banner').style.display='none';");
             html.append("});");
             html.append("(function(){");
             html.append("var el=document.getElementById('depth-panel');");
@@ -607,6 +614,14 @@ public class HTMLKafkaServer {
         this.spider = spider;
     }
 
+    public AtomicInteger getKafkaErrorCount() {
+        return kafkaErrorCount;
+    }
+
+    public void notifyFirstKafkaError() {
+        broadcastEvent("kafka_error", "{}");
+    }
+
     public void signalCrawlFinished() {
         crawlEndTime = System.currentTimeMillis();
         broadcastEvent("state", buildStateJson());
@@ -636,9 +651,11 @@ public class HTMLKafkaServer {
         int failed = spider != null ? spider.getFailedCount() : 0;
         int robotsBlocked = spider != null ? spider.getRobotsBlockedCount() : 0;
         int processed = spider != null ? spider.getProcessedCount() : 0;
+        int kafkaErrors = kafkaErrorCount.get();
         return "{\"queue\":" + queue + ",\"inFlight\":" + inFlight
                 + ",\"rejected\":" + rejected + ",\"failed\":" + failed
-                + ",\"robotsBlocked\":" + robotsBlocked + ",\"processed\":" + processed + "}";
+                + ",\"robotsBlocked\":" + robotsBlocked + ",\"processed\":" + processed
+                + ",\"kafkaErrors\":" + kafkaErrors + "}";
     }
 
     private String buildStateJson() {
