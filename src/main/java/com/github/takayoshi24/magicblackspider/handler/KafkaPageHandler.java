@@ -39,7 +39,8 @@ public class KafkaPageHandler implements PageHandler {
         Elements links = doc.select("a[href]");
         String baseDomain = "";
         try {
-            baseDomain = URI.create(url).getHost();
+            String host = URI.create(url).getHost();
+            if (host != null) baseDomain = host;
         } catch (Exception e) {
             logger.warn("Failed to extract domain from URL: {}", url, e);
         }
