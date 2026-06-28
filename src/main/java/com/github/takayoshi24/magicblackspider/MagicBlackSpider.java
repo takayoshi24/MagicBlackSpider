@@ -123,6 +123,7 @@ public class MagicBlackSpider {
                     continue;
                 }
             } catch (Exception e) {
+                pagePermits.release();
                 logger.warn("Błąd przy dispatch URL {}: {}", url, e.getMessage());
                 continue;
             }
