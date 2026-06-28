@@ -97,6 +97,9 @@ public class SimpleFetcher implements Fetcher {
                 current = location;
                 continue;
             }
+            if (status >= 500) {
+                throw new IOException("HTTP " + status + " for URL: " + current);
+            }
             if (status >= 400) {
                 logger.warn("HTTP {} for URL: {}", status, current);
                 return null;
