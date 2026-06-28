@@ -447,8 +447,10 @@ public class HTMLKafkaServer {
             html.append("}");
             html.append("function togglePause(){");
             html.append("var url=crawlPaused?'/resume':'/pause';");
+            html.append("crawlPaused=!crawlPaused;updatePauseButton();");
             html.append("fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},");
-            html.append("body:'_csrf='+encodeURIComponent(sseToken)});");
+            html.append("body:'_csrf='+encodeURIComponent(sseToken)})");
+            html.append(".catch(function(){crawlPaused=!crawlPaused;updatePauseButton();});");
             html.append("}");
             html.append("function updatePauseButton(){");
             html.append("var btn=document.getElementById('btn-pause-resume');");
