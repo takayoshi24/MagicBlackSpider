@@ -30,6 +30,7 @@ public class MagicBlackSpider {
     private final AtomicInteger inFlight = new AtomicInteger(0);
     private final AtomicInteger failedCount = new AtomicInteger(0);
     private final AtomicInteger robotsBlockedCount = new AtomicInteger(0);
+    private final java.util.concurrent.atomic.AtomicBoolean paused = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public MagicBlackSpider(Scheduler scheduler, Fetcher fetcher, PageHandler handler, int threads, long politenessMillis) {
         this(scheduler, fetcher, handler, threads, politenessMillis,
@@ -52,6 +53,7 @@ public class MagicBlackSpider {
         inFlight.set(0);
         failedCount.set(0);
         robotsBlockedCount.set(0);
+        paused.set(false);
         ExecutorService executor = Executors.newFixedThreadPool(threads);
 
         // Add seed only when explicitly provided (null means wait for URL from the UI)
@@ -69,6 +71,12 @@ public class MagicBlackSpider {
 
         // Główna pętla: pobieraj URL-e i submituj do executor
         while (pagePermits.tryAcquire(500, TimeUnit.MILLISECONDS)) {
+            if (paused.get()) {
+                pagePermits.release();
+                TimeUnit.MILLISECONDS.sleep(100);
+                continue;
+            }
+
             Scheduler.UrlWithDepth urlWithDepth = scheduler.next(500, TimeUnit.MILLISECONDS);
 
             if (urlWithDepth == null) {
@@ -166,4 +174,7 @@ public class MagicBlackSpider {
     public int getInFlight() { return inFlight.get(); }
     public int getFailedCount() { return failedCount.get(); }
     public int getRobotsBlockedCount() { return robotsBlockedCount.get(); }
+    public void pause() { paused.set(true); }
+    public void resume() { paused.set(false); }
+    public boolean isPaused() { return paused.get(); }
 }
