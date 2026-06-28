@@ -788,7 +788,7 @@ public class HTMLKafkaServer {
     }
 
     private static byte[] generateCsv(List<String> urlList, List<int[]> depthList) {
-        StringBuilder sb = new StringBuilder("depth;url;host;path\r\n");
+        StringBuilder sb = new StringBuilder("depth,url,host,path\r\n");
         for (int i = 0; i < urlList.size(); i++) {
             String rawUrl = urlList.get(i);
             int depth = depthList.get(i)[0];
@@ -801,9 +801,9 @@ public class HTMLKafkaServer {
                 String query = uri.getQuery();
                 if (query != null && !query.isEmpty()) path = path + "?" + query;
             } catch (java.net.URISyntaxException ignored) {}
-            sb.append(depth).append(';')
-              .append(escapeCsv(rawUrl)).append(';')
-              .append(escapeCsv(host)).append(';')
+            sb.append(depth).append(',')
+              .append(escapeCsv(rawUrl)).append(',')
+              .append(escapeCsv(host)).append(',')
               .append(escapeCsv(path)).append("\r\n");
         }
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -811,7 +811,7 @@ public class HTMLKafkaServer {
 
     private static String escapeCsv(String value) {
         if (value == null) return "";
-        if (value.contains(";") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
