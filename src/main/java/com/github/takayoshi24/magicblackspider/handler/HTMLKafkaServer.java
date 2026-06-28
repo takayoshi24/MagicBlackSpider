@@ -201,11 +201,17 @@ public class HTMLKafkaServer {
                 depthCounts.merge(depth, 1, Integer::sum);
             }
 
-            byte[] docx = generateDocx(urlList, depthList, depthCounts, crawlStartTime, crawlEndTime, seedUrl);
-
-            ctx.contentType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-            ctx.header("Content-Disposition", "attachment; filename=\"crawl-report.docx\"");
-            ctx.result(docx);
+            if ("csv".equals(ctx.queryParam("format"))) {
+                byte[] csv = generateCsv(urlList, depthList);
+                ctx.contentType("text/csv");
+                ctx.header("Content-Disposition", "attachment; filename=\"crawl_results.csv\"");
+                ctx.result(csv);
+            } else {
+                byte[] docx = generateDocx(urlList, depthList, depthCounts, crawlStartTime, crawlEndTime, seedUrl);
+                ctx.contentType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                ctx.header("Content-Disposition", "attachment; filename=\"crawl-report.docx\"");
+                ctx.result(docx);
+            }
 
             messageQueue.clear();
             crawlStartTime = 0;
@@ -296,6 +302,10 @@ public class HTMLKafkaServer {
             html.append("<form method='POST' action='/download'>");
             html.append(csrfField);
             html.append("<button type='submit' class='btn-download'>&#x2B07; Download Report &amp; Clear</button>");
+            html.append("</form>");
+            html.append("<form method='POST' action='/download?format=csv'>");
+            html.append(csrfField);
+            html.append("<button type='submit' class='btn-download' style='color:#7eb8ff;border-color:#2266aa'>&#x2B07; Download CSV &amp; Clear</button>");
             html.append("</form>");
             html.append("<h3>Crawler Stats</h3>");
             html.append("<div class='timer-label'>Crawl Time</div>");
@@ -689,6 +699,36 @@ public class HTMLKafkaServer {
             doc.write(out);
             return out.toByteArray();
         }
+    }
+
+    private static byte[] generateCsv(List<String> urlList, List<int[]> depthList) {
+        StringBuilder sb = new StringBuilder("depth;url;host;path\r\n");
+        for (int i = 0; i < urlList.size(); i++) {
+            String rawUrl = urlList.get(i);
+            int depth = depthList.get(i)[0];
+            String host = "";
+            String path = "";
+            try {
+                java.net.URI uri = new java.net.URI(rawUrl);
+                host = uri.getHost() != null ? uri.getHost() : "";
+                path = uri.getPath() != null ? uri.getPath() : "";
+                String query = uri.getQuery();
+                if (query != null && !query.isEmpty()) path = path + "?" + query;
+            } catch (java.net.URISyntaxException ignored) {}
+            sb.append(depth).append(';')
+              .append(escapeCsv(rawUrl)).append(';')
+              .append(escapeCsv(host)).append(';')
+              .append(escapeCsv(path)).append("\r\n");
+        }
+        return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static String escapeCsv(String value) {
+        if (value == null) return "";
+        if (value.contains(";") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
     }
 
     private static void addInfoLine(XWPFDocument doc, String label, String value) {
