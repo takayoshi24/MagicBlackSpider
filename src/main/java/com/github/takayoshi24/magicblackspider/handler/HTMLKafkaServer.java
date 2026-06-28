@@ -224,7 +224,8 @@ public class HTMLKafkaServer {
                 int depth = 0;
                 String url = msg;
                 if (parts.length == 2) {
-                    try { depth = Integer.parseInt(parts[0]); url = parts[1]; }
+                    url = parts[1];
+                    try { depth = Integer.parseInt(parts[0]); }
                     catch (NumberFormatException ignored) {}
                 }
                 depthList.add(new int[]{depth});
