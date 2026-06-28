@@ -132,17 +132,18 @@ public class MagicBlackSpider {
             inFlight.incrementAndGet();
             executor.submit(() -> {
                 try {
-                    // Pobierz stronę
-                    Document doc = fetcher.fetch(url);
+                    Document doc;
+                    try {
+                        doc = fetcher.fetch(url);
+                    } catch (java.io.IOException e) {
+                        failedCount.incrementAndGet();
+                        logger.warn("Błąd pobierania URL {}: {}", url, e.getMessage());
+                        return;
+                    }
                     if (doc == null) { failedCount.incrementAndGet(); return; }
 
-                    // Obsłuż stronę z depth
                     handler.handle(new Page(url, doc), scheduler, depth);
-
-                    // Oznacz jako odwiedzoną
                     scheduler.markVisited(url);
-
-                    // Zwiększ licznik przetworzonych
                     processed.incrementAndGet();
 
                 } catch (Exception e) {
